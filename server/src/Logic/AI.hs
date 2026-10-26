@@ -1,4 +1,6 @@
+
 {-# LANGUAGE BangPatterns #-}
+
 module Logic.AI
   ( Vec2
   , nearestBy
@@ -17,77 +19,94 @@ module Logic.AI
   , moveDirectionWithRange
   , predictTargetPosition
   , patrolDirection
+  , monsterAggroRange
+  , monsterAttackRange
+  , selectTargetForMonster
+  , monsterAIState
+  , monsterMoveDirection
+  , moveMonsterWithCollision
   ) where
 
 import Data.List (find)
 
 import Logic.Movement
-  ( Vec2, addVec, distanceSq, normalize, scaleVec, subVec, withinDistance )
+  ( Vec2
+  , addVec
+  , distanceSq
+  , normalize
+  , scaleVec
+  , subVec
+  , withinDistance
+  , stepFromInput
+  , moveWithCollisionSteps
+  )
 
--- Mọi phép so sánh khoảng cách trong module này dùng bình phương khoảng cách
--- (không sqrt). Thứ tự gần/xa và kết quả <=, < không đổi vì khoảng cách >= 0.
+import Types.GameState
 
--- Bình phương của một range (range âm coi như 0).
 rangeSq :: Float -> Float
-rangeSq range = r * r
-  where
-    r = max 0 range
+rangeSq range =
+  let r = max 0 range
+  in r * r
 {-# INLINE rangeSq #-}
 
--- Chọn mục tiêu gần nhất, giữ nguyên toàn bộ giá trị (ví dụ gồm cả ID).
--- Danh sách đầu vào phải được lọc trước: chỉ truyền người chơi còn sống/kết nối.
--- Một lượt duyệt, mỗi phần tử tính khoảng cách đúng một lần; hòa thì lấy phần tử đầu.
+-- Chọn mục tiêu gần nhất, giữ nguyên toàn bộ dữ liệu và ID.
 nearestBy :: (a -> Vec2) -> Vec2 -> [a] -> Maybe a
 nearestBy _ _ [] = Nothing
-nearestBy getPos origin (first:rest) = Just (go first (distTo first) rest)
+nearestBy getPos origin (first:rest) =
+  Just (go first (distTo first) rest)
   where
-    distTo c = distanceSq origin (getPos c)
+    distTo target = distanceSq origin (getPos target)
 
     go !best !_ [] = best
-    go !best !bestD (c:cs)
-      | d < bestD = go c d cs
-      | otherwise = go best bestD cs
+    go !best !bestD (target:targets)
+      | d < bestD = go target d targets
+      | otherwise = go best bestD targets
       where
-        d = distTo c
+        d = distTo target
 
--- Chỉ xét mục tiêu nằm trong phạm vi; trả Nothing nếu không có mục tiêu phù hợp.
--- Lọc và chọn gần nhất trong cùng một lượt duyệt (không tạo danh sách trung gian).
-nearestWithinRange :: (a -> Vec2) -> Vec2 -> Float -> [a] -> Maybe a
+-- Tìm mục tiêu gần nhất trong phạm vi phát hiện.
+nearestWithinRange
+  :: (a -> Vec2) -> Vec2 -> Float -> [a] -> Maybe a
 nearestWithinRange getPos origin range = go Nothing
   where
     limitSq = rangeSq range
 
-    go !acc [] = fmap fst acc
-    go !acc (c:cs)
-      | d > limitSq = go acc cs
-      | otherwise = case acc of
-          Just (_, bestD) | bestD <= d -> go acc cs
-          _                            -> go (Just (c, d)) cs
+    go !best [] = fmap fst best
+    go !best (target:targets)
+      | d > limitSq = go best targets
+      | otherwise =
+          case best of
+            Just (_, bestD) | bestD <= d ->
+              go best targets
+            _ -> go (Just (target, d)) targets
       where
-        d = distanceSq origin (getPos c)
+        d = distanceSq origin (getPos target)
 
--- Giữ mục tiêu hiện tại nếu vẫn còn trong aggro range; nếu không thì chọn mục tiêu
--- gần nhất trong range. getId giúp giữ đúng player thay vì chỉ giữ vị trí của họ.
+-- Giữ mục tiêu hiện tại nếu vẫn sống và còn trong tầm.
 retainTarget
-  :: (a -> Int) -> Int -> (a -> Vec2) -> Vec2 -> Float -> [a] -> Maybe a
+  :: (a -> Int)
+  -> Int
+  -> (a -> Vec2)
+  -> Vec2
+  -> Float
+  -> [a]
+  -> Maybe a
 retainTarget getId currentId getPos origin aggroRange candidates =
-  case find isCurrent candidates of
-    Just target | withinDistance aggroRange origin (getPos target) -> Just target
+  case find ((== currentId) . getId) candidates of
+    Just target
+      | withinDistance aggroRange origin (getPos target) ->
+          Just target
     _ -> nearestWithinRange getPos origin aggroRange candidates
-  where
-    isCurrent target = getId target == currentId
 
 directionToTarget :: Vec2 -> Vec2 -> Vec2
-directionToTarget fromPos targetPos = normalize (subVec targetPos fromPos)
+directionToTarget fromPos targetPos =
+  normalize (subVec targetPos fromPos)
 
--- Khi hai entity chồng (gần) đúng một vị trí, chọn hướng dự phòng ổn định (1,0)
--- để tránh vector 0/NaN. Kiểm tra trên kết quả normalize nên cũng bắt được
--- trường hợp delta cực nhỏ nhưng khác 0.
 directionAwayFromTarget :: Vec2 -> Vec2 -> Vec2
 directionAwayFromTarget fromPos targetPos =
   case normalize (subVec fromPos targetPos) of
     (0, 0) -> (1, 0)
-    dir    -> dir
+    direction -> direction
 
 shouldChase :: Float -> Vec2 -> Vec2 -> Bool
 shouldChase = withinDistance
@@ -108,69 +127,183 @@ data RangedMove
   | Hold
   deriving (Eq, Show, Read)
 
--- AI cận chiến: Nothing nghĩa là chưa có mục tiêu hợp lệ.
--- Chỉ tính khoảng cách một lần cho cả hai ngưỡng aggro/attack.
+-- Nothing nghĩa là không có mục tiêu hợp lệ.
 decideAIState :: Float -> Float -> Maybe Vec2 -> Vec2 -> AIState
 decideAIState _ _ Nothing _ = Idle
 decideAIState aggroRange attackRange (Just targetPos) monsterPos
-  | dSq > rangeSq aggroRange  = Idle
+  | dSq > rangeSq aggroRange = Idle
   | dSq <= rangeSq attackRange = Attacking
-  | otherwise                  = Chasing
+  | otherwise = Chasing
   where
     dSq = distanceSq monsterPos targetPos
 
--- Quái tầm xa giữ khoảng cách: quá gần thì lùi, quá xa thì tiến, còn lại đứng bắn.
+-- Quái tầm xa: lùi khi quá gần, tiến khi quá xa.
 rangedMove :: Float -> Float -> Vec2 -> Vec2 -> RangedMove
 rangedMove minimumRange preferredRange monsterPos targetPos
   | dSq < rangeSq minRange = Retreat
   | dSq > rangeSq maxRange = Approach
-  | otherwise              = Hold
+  | otherwise = Hold
   where
-    dSq      = distanceSq monsterPos targetPos
+    dSq = distanceSq monsterPos targetPos
     minRange = max 0 minimumRange
     maxRange = max minRange preferredRange
 
 decideRangedState
   :: Float -> Float -> Float -> Maybe Vec2 -> Vec2 -> AIState
 decideRangedState _ _ _ Nothing _ = Idle
-decideRangedState aggroRange minimumRange preferredRange (Just targetPos) monsterPos
+decideRangedState aggroRange minimumRange preferredRange
+                 (Just targetPos) monsterPos
   | not (shouldChase aggroRange monsterPos targetPos) = Idle
-  | otherwise = case rangedMove minimumRange preferredRange monsterPos targetPos of
-      Retreat  -> KeepingDistance
-      Approach -> Chasing
-      Hold     -> Attacking
+  | otherwise =
+      case rangedMove minimumRange preferredRange monsterPos targetPos of
+        Retreat -> KeepingDistance
+        Approach -> Chasing
+        Hold -> Attacking
 
--- Hướng cơ bản theo state; GameLoop cần nhân với tốc độ và dt.
 moveDirectionFor :: AIState -> Vec2 -> Vec2 -> Vec2
-moveDirectionFor state monsterPos targetPos = case state of
-  Chasing         -> directionToTarget monsterPos targetPos
-  KeepingDistance -> directionAwayFromTarget monsterPos targetPos
-  _               -> (0, 0)
+moveDirectionFor state monsterPos targetPos =
+  case state of
+    Chasing -> directionToTarget monsterPos targetPos
+    KeepingDistance -> directionAwayFromTarget monsterPos targetPos
+    _ -> (0, 0)
 
--- Giống moveDirectionFor nhưng dừng khi đã tới khoảng cách mong muốn.
--- Dùng cho melee để không chạy xuyên qua người chơi khi còn cách attackRange.
-moveDirectionWithRange :: AIState -> Float -> Vec2 -> Vec2 -> Vec2
+-- Dừng khi đạt khoảng cách mong muốn.
+moveDirectionWithRange
+  :: AIState -> Float -> Vec2 -> Vec2 -> Vec2
 moveDirectionWithRange state desiredRange monsterPos targetPos =
   case state of
     Chasing
       | dSq > stopSq -> directionToTarget monsterPos targetPos
-      | otherwise    -> (0, 0)
+      | otherwise -> (0, 0)
     KeepingDistance
       | dSq < stopSq -> directionAwayFromTarget monsterPos targetPos
-      | otherwise    -> (0, 0)
+      | otherwise -> (0, 0)
     _ -> (0, 0)
   where
-    dSq    = distanceSq monsterPos targetPos
+    dSq = distanceSq monsterPos targetPos
     stopSq = rangeSq desiredRange
 
--- Ước lượng vị trí mục tiêu khi đạn cần thời gian bay tới.
--- predictionSeconds thường nên bị giới hạn nhỏ ở phía gọi để tránh dự đoán quá xa.
+-- Dự đoán vị trí mục tiêu theo vận tốc.
 predictTargetPosition :: Vec2 -> Vec2 -> Float -> Vec2
 predictTargetPosition targetPos targetVelocity predictionSeconds =
-  addVec targetPos (scaleVec (max 0 predictionSeconds) targetVelocity)
+  addVec targetPos
+    (scaleVec (max 0 predictionSeconds) targetVelocity)
 
--- Tuần tra về waypoint; đứng yên khi đã tới đủ gần.
+-- Tuần tra tới waypoint.
 patrolDirection :: Vec2 -> Vec2 -> Float -> Vec2
 patrolDirection currentPos waypoint stopDistance
   | withinDistance stopDistance currentPos waypoint = (0, 0)
   | otherwise = directionToTarget currentPos waypoint
+
+-- Phạm vi phát hiện theo loại quái.
+monsterAggroRange :: Monster -> Float
+monsterAggroRange monster =
+  case kind monster of
+    Boss -> 12.0
+    Regular Ranged _ -> 10.0
+    Regular _ TankBody -> 8.0
+    Regular _ GlassBody -> 11.0
+    Regular _ _ -> 9.0
+
+-- Phạm vi tấn công theo loại quái.
+monsterAttackRange :: Monster -> Float
+monsterAttackRange monster =
+  case kind monster of
+    Boss -> 1.8
+    Regular Ranged _ -> 7.0
+    Regular _ _ -> 1.2
+
+-- Chỉ chọn người chơi sống và còn HP.
+selectTargetForMonster :: Monster -> [Player] -> Maybe Player
+selectTargetForMonster monster playersNow =
+  nearestWithinRange
+    position
+    (mPosition monster)
+    (monsterAggroRange monster)
+    (filter canTarget playersNow)
+  where
+    canTarget player =
+      status player == Alive && hp (stats player) > 0
+
+monsterAIState :: Monster -> [Player] -> AIState
+monsterAIState monster playersNow =
+  case selectTargetForMonster monster playersNow of
+    Nothing -> Idle
+    Just target ->
+      let targetPos = position target
+          monsterPos = mPosition monster
+      in case kind monster of
+           Regular Ranged _ ->
+             decideRangedState
+               (monsterAggroRange monster)
+               (rangedMinimum monster)
+               (rangedPreferred monster)
+               (Just targetPos)
+               monsterPos
+           _ ->
+             decideAIState
+               (monsterAggroRange monster)
+               (monsterAttackRange monster)
+               (Just targetPos)
+               monsterPos
+  where
+    rangedMinimum m = min 3.5 (monsterAttackRange m * 0.55)
+    rangedPreferred m =
+      max (rangedMinimum m + 0.5)
+          (min 7.0 (monsterAttackRange m))
+
+monsterMoveDirection :: Monster -> [Player] -> Vec2
+monsterMoveDirection monster playersNow =
+  case selectTargetForMonster monster playersNow of
+    Nothing -> (0, 0)
+    Just target ->
+      let monsterPos = mPosition monster
+          targetPos = position target
+          state = monsterAIState monster playersNow
+          stopRange =
+            case kind monster of
+              Regular Ranged _ -> rangedPreferred monster
+              _ -> monsterAttackRange monster
+      in moveDirectionWithRange
+           state stopRange monsterPos targetPos
+  where
+    rangedPreferred m =
+      max 4.0 (min 7.0 (monsterAttackRange m))
+
+-- Cập nhật vị trí quái với va chạm do server cung cấp.
+-- isBlocked phải xét cả hitbox của quái với tường.
+moveMonsterWithCollision
+  :: (Vec2 -> Bool)
+  -> Float
+  -> [Player]
+  -> Monster
+  -> Monster
+moveMonsterWithCollision isBlocked dt playersNow monster
+  | hp (mStats monster) <= 0 = monster
+  | not (any canTarget playersNow) = monster
+  | otherwise =
+      monster
+        { mPosition =
+            moveWithCollisionSteps
+              isBlocked
+              0.2
+              (mPosition monster)
+              delta
+        }
+  where
+    elapsed = max 0 (min 0.25 dt)
+    direction = monsterMoveDirection monster playersNow
+    baseSpeed = max 0 (moveSpeed (mStats monster))
+
+    speed =
+      case kind monster of
+        Regular _ TankBody -> baseSpeed * 0.65
+        Regular _ GlassBody -> baseSpeed * 1.25
+        Regular Ranged _ -> baseSpeed * 0.8
+        Boss -> baseSpeed
+        _ -> baseSpeed
+
+    delta = stepFromInput direction speed elapsed
+
+    canTarget player =
+      status player == Alive && hp (stats player) > 0
