@@ -2,11 +2,13 @@ module Main where
 
 import Graphics.Gloss.Interface.IO.Game
 import Control.Concurrent.MVar
+import Control.Exception (SomeException, try)
+import System.Exit (exitFailure)
+import System.IO (hPutStrLn, stderr)
 
-import Network (connectToServer)
+import Network (NetworkConnection(..), connectToServer)
 import Render (renderGame)
 import Input (newInputRefs, handleEvent)
-import Types.GameState (GameState(..), RoomPhase(Lobby))
 
 main :: IO ()
 main = do
@@ -15,20 +17,31 @@ main = do
   putStrLn "Nhap ten nhan vat:"
   name <- getLine
 
-  (stateVar, sendInput) <- connectToServer "127.0.0.1" 8080 code name
+  connectionResult <- connectToServer "127.0.0.1" 8080 code name
+  connection <- case connectionResult of
+    Left err -> do
+      hPutStrLn stderr ("Khong the vao phong: " ++ err)
+      exitFailure
+    Right connected -> pure connected
   inputRefs <- newInputRefs
 
-  let initial = GameState Lobby []
-
-  playIO
+  playResult <- try $ playIO
     (InWindow "Soul Knight Mini" (800, 600) (100, 100))
     black
     60
-    initial
+    (initialGameState connection)
     (\gs -> pure (renderGame gs))
-    (\ev gs -> handleEvent sendInput inputRefs ev >> pure gs)
+    (\ev gs -> handleEvent (sendClientMessage connection) inputRefs ev >> pure gs)
     (\_dt gs -> do
-        mNew <- tryTakeMVar stateVar
-        case mNew of
-          Just s  -> pure s
-          Nothing -> pure gs)
+        mFailure <- tryTakeMVar (connectionFailure connection)
+        case mFailure of
+          Just err -> ioError (userError ("Mat ket noi server: " ++ err))
+          Nothing -> do
+            mNew <- tryTakeMVar (latestGameState connection)
+            case mNew of
+              Just s  -> pure s
+              Nothing -> pure gs)
+    :: IO (Either SomeException ())
+  case playResult of
+    Left err -> hPutStrLn stderr ("Client dung do loi: " ++ show err) >> exitFailure
+    Right () -> pure ()
