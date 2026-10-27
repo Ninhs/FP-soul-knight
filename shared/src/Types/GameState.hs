@@ -6,7 +6,7 @@ import Data.Aeson (ToJSON, FromJSON)
 
 -- Role & Stats
 
-data Role = Warrior | Archer | Mage | Tank
+data Role = Warrior | Archer
   deriving (Eq, Show, Generic)
 instance ToJSON Role
 instance FromJSON Role
@@ -17,6 +17,7 @@ data Stats = Stats
   , damage    :: Int
   , moveSpeed :: Float
   , atkSpeed  :: Float
+  , atkRange  :: Float
   } deriving (Show, Generic)
 instance ToJSON Stats
 instance FromJSON Stats
@@ -69,17 +70,24 @@ data Monster = Monster
   , mPosition :: (Float, Float)
   , mStats    :: Stats
   , kind      :: MonsterKind
+  , mCooldown :: Float
   } deriving (Show, Generic)
 instance ToJSON Monster
 instance FromJSON Monster
 
 -- Bullet, Drop, Portal
 
+data BulletOwner = FromPlayer Int | FromMonster Int
+  deriving (Show, Generic)
+instance ToJSON BulletOwner
+instance FromJSON BulletOwner
+
 data Bullet = Bullet
   { bPosition :: (Float, Float)
   , bVelocity :: (Float, Float)
-  , bOwner    :: Int
+  , bOwner    :: BulletOwner
   , bDamage   :: Int
+  , bLife     :: Float
   } deriving (Show, Generic)
 instance ToJSON Bullet
 instance FromJSON Bullet
@@ -148,3 +156,5 @@ data GameState = GameState
   } deriving (Show, Generic)
 instance ToJSON GameState
 instance FromJSON GameState
+
+

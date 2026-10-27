@@ -10,11 +10,22 @@ executable client
     Network
     Render
     Input
+    Assets
+    Theme
+    Components.UI
+    Views.MainMenu
+    Views.CharSelect
+    Views.Lobby
+    Views.MapSelect
+    Views.HUD
+    Views.Shop
+    Views.Upgrade
+    Views.Overlays
   build-depends:
     base,
     shared,
     websockets,
-    network,
     aeson,
-    gloss
+    gloss,
+    directory
   default-language: Haskell2010

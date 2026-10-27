@@ -26,6 +26,11 @@ executable server
         DB
         Network
         Room
+        Logic.AI
+        Logic.Combat
+        Logic.Movement
+        Logic.Portal
+        Logic.GameLoop
     build-depends:
         base,
         shared,
