@@ -1,4 +1,4 @@
-FROM haskell:9.10.3-slim AS build
+FROM haskell:9.10.3-slim-bookworm AS build
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y libpq-dev pkg-config zlib1g-dev libzstd-dev \
