@@ -4,7 +4,7 @@ module Network where
 import qualified Network.WebSockets as WS
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
-import Control.Exception (SomeException, displayException, try, tryPutMVar)
+import Control.Exception (SomeException, displayException, try)
 import Data.Aeson (encode, decode)
 
 import Protocol

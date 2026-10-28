@@ -10,6 +10,7 @@ executable client
     Network
     Render
     Input
+    Types
   build-depends:
     base,
     shared,
