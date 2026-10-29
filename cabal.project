@@ -1,1 +1,6 @@
 packages: shared server client
+
+package postgresql-libpq
+  flags: +use-pkg-config
+
+constraints: aeson < 2.3

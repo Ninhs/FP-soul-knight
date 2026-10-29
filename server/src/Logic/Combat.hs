@@ -11,6 +11,7 @@ module Logic.Combat
     , splitDeadMonsters
       -- va chạm
     , circlesOverlap
+    , playerRadius
       -- người chơi tấn công
     , AttackResult(..)
     , playerAttack
@@ -72,10 +73,15 @@ selectAutoTarget p msList = case filter inRange msList of
 --  TÍNH SÁT THƯƠNG
 
 -- Hệ số sát thương nhận vào theo thể chất quái
+bodyMultiplier :: Monster -> Float
+bodyMultiplier m = case kind m of
+    Regular _ TankBody  -> 0.75
+    Regular _ GlassBody -> 1.25
+    Boss                -> 1.0
 
 -- Đòn có sát thương > 0 thì luôn gây ít nhất 1 máu.
 damageToMonster :: Int -> Monster -> Int
-damageToMonster rawDmg _ = max 0 rawDmg
+damageToMonster rawDmg m = max 0 (round (fromIntegral rawDmg * bodyMultiplier m))
 
 -- Trừ máu quái (không để âm).
 applyDamageToMonster :: Int -> Monster -> Monster

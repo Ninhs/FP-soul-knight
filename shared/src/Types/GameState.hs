@@ -14,10 +14,8 @@ instance FromJSON Portal
 -- Map template (bản thiết kế map, dùng để random / cố định boss)
 
 data MapTemplate = MapTemplate
-  { templateIsBoss :: Bool
-  , spawnPoints    :: [(Float, Float)]
-  , portalSpawn    :: (Float, Float)
-  , monsterPool    :: [MonsterKind]
+  { portalSpawn :: (Float, Float)
+  , mapBounds   :: (Float, Float, Float, Float)  -- (minX, maxX, minY, maxY)
   } deriving (Show, Generic)
 instance ToJSON MapTemplate
 instance FromJSON MapTemplate
@@ -56,3 +54,5 @@ data GameState = GameState
   } deriving (Show, Generic)
 instance ToJSON GameState
 instance FromJSON GameState
+
+
