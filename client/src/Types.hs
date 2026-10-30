@@ -100,6 +100,7 @@ data ClientState = ClientState
   , isVictory :: Bool
   , noticeText :: String
   , returnView :: ViewState
+  , noticeReturnView :: ViewState
   , playerAnim :: AnimState
   , playerFacingRight :: Bool
   , enemyCorpses :: [EnemyData]
@@ -267,6 +268,7 @@ initialClientState assets =
     , isVictory = False
     , noticeText = ""
     , returnView = MainMenuView
+    , noticeReturnView = MainMenuView
     , playerAnim = startAnim Idle
     , playerFacingRight = True
     , enemyCorpses = []

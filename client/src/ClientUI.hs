@@ -50,7 +50,7 @@ reduceEnter state = case appView state of
     | roomInputActive state ->
         Just (submitRoomCode (state { roomInputActive = False }))
     | otherwise -> Just (startLocalRun state)
-  ShopNoticeView -> Just state { appView = returnView state }
+  ShopNoticeView -> Just state { appView = noticeReturnView state }
   TutorialView -> Just state { appView = CharacterSelectView }
   VictoryView -> Just (startLocalRun state)
   DefeatView -> Just (startLocalRun state)
@@ -134,7 +134,7 @@ clickMainMenu position state
       Just state
         { appView = ShopNoticeView
         , noticeText = "Settings are not implemented yet."
-        , returnView = MainMenuView
+        , noticeReturnView = MainMenuView
         }
   | otherwise = Nothing
 
@@ -216,9 +216,9 @@ clickShop :: (Float, Float) -> ClientState -> Maybe ClientState
 clickShop position state
   | insideRect position (-230, -280) 200 48 =
       Just state { appView = returnView state }
-  | insideRect position (-70, 220) 190 44 =
+  | insideRect position (20, 240) 190 44 =
       Just state { shopEquipmentTab = False }
-  | insideRect position (150, 220) 190 44 =
+  | insideRect position (240, 240) 190 44 =
       Just state { shopEquipmentTab = True }
   | insideRect position (20, -280) 240 48 && gems state >= 5 =
       Just state { gems = gems state - 5, shopRefreshes = shopRefreshes state + 1 }
@@ -263,7 +263,7 @@ clickChestReward position state
 clickNotice :: (Float, Float) -> ClientState -> Maybe ClientState
 clickNotice position state
   | insideRect position (0, -70) 180 48 =
-      Just state { appView = returnView state }
+      Just state { appView = noticeReturnView state }
   | otherwise = Nothing
 
 clickConfirmation :: (Float, Float) -> ClientState -> Maybe ClientState
@@ -431,7 +431,7 @@ purchaseItem item state
 showNotice :: String -> ViewState -> ClientState -> ClientState
 showNotice message previous state = state
   { appView = ShopNoticeView
-  , returnView = previous
+  , noticeReturnView = previous
   , noticeText = message
   }
 

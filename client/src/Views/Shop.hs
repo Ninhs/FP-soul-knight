@@ -16,6 +16,8 @@ import Components.UI
   , drawTextShadow
   , drawPanel
   , insideRect
+  , drawTitleAt
+  , drawCenteredText
   )
 import qualified Theme
 
@@ -23,30 +25,27 @@ drawShop :: World -> Picture
 drawShop w = Pictures
   [ menuBackground w
   , Color Theme.cOverlay $ rectangleSolid Theme.screenWidth Theme.screenHeight
-  , drawPanel 1200 620
-  , Translate 0 300 $
-      drawSoul3DText 2.4 Theme.cTextGold Theme.cDarkBorder "LOCAL SHOP DEMO"
-  , drawAssetSlot w SlotShopkeeper
-  , Translate (-470) (-55) $ drawPanel 260 150
-  , Translate (-470) (-35) $
-      drawSoul3DText 0.95 Theme.cTextGold Theme.cDarkBorder "TRADER"
-  , Translate (-470) (-72) $
-      drawTextShadow 0.11 Theme.cTextWhite Theme.cDarkBorder
-        "Preview items only. Purchases are not saved."
-  , Translate 475 300 $ drawPanel 250 70
-  , drawAssetAt w AssetCoin (390, 300) (28, 28) Contain
-  , Translate 470 300 $
+  , drawPanel 1240 660
+  , drawTitleAt 0 2.4 Theme.cTextGold Theme.cDarkBorder 300 "LOCAL SHOP DEMO"
+  , Translate (-500) (-55) $ drawPanel 240 150
+  , drawTitleAt (-500) 0.95 Theme.cTextGold Theme.cDarkBorder (-40) "TRADER"
+  , drawCenteredText (-500) 0.10 Theme.cTextWhite Theme.cDarkBorder (-78)
+      "Preview items only."
+  , drawCenteredText (-500) 0.10 Theme.cTextWhite Theme.cDarkBorder (-100)
+      "Purchases are not saved."
+  , Translate 475 285 $ drawPanel 250 70
+  , drawAssetAt w AssetCoin (390, 285) (28, 28) Contain
+  , Translate 470 285 $
       drawSoul3DText 1.2 Theme.cTextGold Theme.cDarkBorder
         (show (goldCoins w) ++ " G")
-  , Translate (-70) 220 $ drawSoulButton 190 44 "ITEMS"
+  , Translate 20 240 $ drawSoulButton 190 44 "ITEMS"
       (not (shopEquipmentTab w)
-        || insideRect (mousePos w) (-70, 220) 190 44)
-  , Translate 150 220 $ drawSoulButton 190 44 "EQUIPMENT"
+        || insideRect (mousePos w) (20, 240) 190 44)
+  , Translate 240 240 $ drawSoulButton 190 44 "EQUIPMENT"
       (shopEquipmentTab w
-        || insideRect (mousePos w) (150, 220) 190 44)
-  , Translate (-70) 180 $
-      drawSoul3DText 1.0 Theme.cTextMuted Theme.cDarkBorder
-        (if shopEquipmentTab w then "EQUIPMENT STOCK" else "CONSUMABLE STOCK")
+        || insideRect (mousePos w) (240, 240) 190 44)
+  , drawCenteredText 130 0.10 Theme.cTextMuted Theme.cDarkBorder 205
+      (if shopEquipmentTab w then "EQUIPMENT STOCK" else "CONSUMABLE STOCK")
   , Pictures (map (drawItem w) (shopItemsFor w))
   , Translate (-230) (-280) $ drawSoulButton 200 48 "BACK"
       (insideRect (mousePos w) (-230, -280) 200 48)
@@ -64,19 +63,15 @@ drawItem w (kind, x) =
       iconPosition = (x, 100)
       buttonPosition = (x, -100)
   in Pictures
-    [ Translate x 15 $ drawPanel 190 350
+    [ Translate x 15 $ drawPanel 200 350
     , drawAssetAt w (shopItemAsset kind) iconPosition (76, 76) Contain
-    , Translate x 50 $
-        drawSoul3DText 1.05 Theme.cTextWhite Theme.cDarkBorder title
-    , Translate x 15 $
-        drawTextShadow 0.10 Theme.cTextMuted Theme.cDarkBorder description
-    , Translate x (-28) $
-        drawSoul3DText 1.0
-          (if canAfford then Theme.cTextGold else Theme.cAccentRed)
-          Theme.cDarkBorder (show price ++ " GOLD")
-    , Translate x (-62) $
-        drawTextShadow 0.10 Theme.cTextMuted Theme.cDarkBorder
-          ("OWNED: " ++ show (inventoryCount kind (shopInventory w)))
+    , drawTitleAt x 1.0 Theme.cTextWhite Theme.cDarkBorder 50 title
+    , drawCenteredText x 0.10 Theme.cTextMuted Theme.cDarkBorder 15 description
+    , drawCenteredText x 0.11
+        (if canAfford then Theme.cTextGold else Theme.cAccentRed)
+        Theme.cDarkBorder (-28) (show price ++ " GOLD")
+    , drawCenteredText x 0.10 Theme.cTextMuted Theme.cDarkBorder (-62)
+        ("OWNED: " ++ show (inventoryCount kind (shopInventory w)))
     , Translate x (-100) $ drawSoulButton 140 40 "BUY"
         (insideRect (mousePos w) buttonPosition 140 40)
     ]
@@ -90,7 +85,7 @@ shopItemAsset DamageCharm = AssetDamageRune
 shopItemAsset SwiftBoots = AssetSwiftBoots
 
 shopItemsFor :: World -> [(ShopItemKind, Float)]
-shopItemsFor w = zip selectedItems [-270, -50, 170, 390]
+shopItemsFor w = zip selectedItems [-200, 20, 240, 460]
   where
     stock
       | shopEquipmentTab w =
@@ -108,12 +103,8 @@ rotateItems count items =
 shopItemDetails :: ShopItemKind -> (String, String, Int, (Float, Float))
 shopItemDetails SmallHealthPotion =
   ("SMALL MEDKIT", "RESTORE +25 HP", 100, (25, 0))
-shopItemDetails LightArmor =
-  ("LIGHT ARMOR", "RESTORE +20 ARMOR", 120, (0, 20))
 shopItemDetails LargeHealthPotion =
   ("LARGE MEDKIT", "RESTORE +60 HP", 220, (60, 0))
-shopItemDetails HeavyArmor =
-  ("HEAVY ARMOR", "RESTORE +50 ARMOR", 250, (0, 50))
 shopItemDetails DamageCharm =
   ("DAMAGE CHARM", "+3 ATTACK DAMAGE", 350, (0, 0))
 shopItemDetails SwiftBoots =

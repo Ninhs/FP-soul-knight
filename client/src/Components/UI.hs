@@ -385,3 +385,30 @@ drawAssetFallback asset width height =
       ]
     armorMark = Color blue $ Polygon
       [(-18, 12), (0, 21), (18, 12), (14, -8), (0, -20), (-14, -8)]
+
+
+-- Tiêu đề đậm, căn giữa quanh tâm ngang cx.
+-- cx: tâm ngang (px), y: độ cao (px)
+drawTitleAt :: Float -> Float -> Color -> Color -> Float -> String -> Picture
+drawTitleAt cx size textColor borderColor y label =
+  Translate (cx + x) y $ Scale k k $ Pictures $
+    [ Translate (dx * 6) (dy * 6) $ Color borderColor $ Text label
+    | (dx, dy) <- outline
+    ]
+    ++ [ Color textColor $ Text label ]
+  where
+    k = size * 0.12
+    charAdvance = 60   -- độ rộng ước lượng một ký tự; chỉnh nếu chữ lệch
+    x = -(fromIntegral (length label) * charAdvance * k) / 2
+    outline = [ (i, j) | i <- [-1, 0, 1], j <- [-1, 0, 1], (i, j) /= (0, 0) ]
+
+-- Chữ thường căn giữa quanh tâm ngang cx, có bóng nhẹ
+drawCenteredText :: Float -> Float -> Color -> Color -> Float -> String -> Picture
+drawCenteredText cx size textColor shadowColor y label =
+  Translate (cx + x) y $ Scale size size $ Pictures
+    [ Translate 4 (-4) $ Color shadowColor $ Text label
+    , Color textColor $ Text label
+    ]
+  where
+    charAdvance = 100   -- độ rộng ước lượng một ký tự; chỉnh nếu chữ lệch
+    x = -(fromIntegral (length label) * charAdvance * size) / 2

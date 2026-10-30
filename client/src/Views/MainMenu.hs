@@ -9,11 +9,9 @@ import qualified Theme
 drawMainMenu :: World -> Picture
 drawMainMenu w = Pictures
   [ menuBackground w
-  , Color (makeColor 0.005 0.015 0.04 0.68) $
+  , Color (makeColor 0 0 0 0) $
       rectangleSolid Theme.screenWidth Theme.screenHeight
   , drawAssetSlot w SlotMenuLogo
-  , Translate (-180) 220 $
-      drawSoul3DText 3.2 Theme.cTextGold Theme.cDarkBorder "LOWBUGGET SOUL KNIGHT"
   , drawResources w
   , actionButton w (-420, 155) "START" True
   , actionButton w (-420, 85) "CHARACTER SELECT" False
@@ -23,16 +21,6 @@ drawMainMenu w = Pictures
   , actionButton w (-420, -195) "EXIT" False
   , Translate 590 305 $ drawSoulButton 76 40 "SET"
       (insideRect (mousePos w) (590, 305) 76 40)
-  , drawAssetSlot w SlotMenuShopkeeper
-  , Translate 350 (-210) $ drawPanel 500 150
-  , Translate 350 (-180) $
-      drawSoul3DText 1.4 Theme.cTextGold Theme.cDarkBorder "LOWBUGGET SOUL KNIGHT"
-  , Translate 150 (-215) $  
-      drawTextShadow 0.13 Theme.cTextWhite Theme.cDarkBorder
-        "Explore halls, gather relics, survive."
-  , Translate 150 (-245) $
-      drawTextShadow 0.12 Theme.cTextMuted Theme.cDarkBorder
-        "LOCAL PREVIEW - CO-OP USES MOCK PLAYERS"
   ]
 
 actionButton :: World -> (Float, Float) -> String -> Bool -> Picture
@@ -46,17 +34,21 @@ actionButton w position label isPrimary
     hovered = insideRect (mousePos w) position 300 54
 
 drawResources :: World -> Picture
-drawResources w = Pictures
-  [ Translate 410 300 $ drawPanel 280 112
-  , Translate 340 329 $
-      drawSoul3DText 1.25 Theme.cTextGold Theme.cDarkBorder
-        (show (goldCoins w) ++ " GOLD")
-  , Translate 340 274 $
-      drawSoul3DText 1.25 Theme.cTextWhite Theme.cDarkBorder
-        (show (gems w) ++ " GEMS")
-  , drawAssetSlot w SlotMenuCoin
-  , drawAssetSlot w SlotMenuGem
-  ]
+drawResources w =
+  Translate 410 300 $ Scale s s $ Translate (-410) (-300) $ Pictures
+    [ Translate 410 300 $ drawPanel 280 112
+    , Translate 340 329 $
+        drawSoul3DText 1.25 Theme.cTextGold Theme.cDarkBorder
+          (show (goldCoins w) ++ " GOLD")
+    , Translate 340 274 $
+        drawSoul3DText 1.25 Theme.cTextWhite Theme.cDarkBorder
+          (show (gems w) ++ " GEMS")
+    , drawAssetSlot w SlotMenuCoin
+    , drawAssetSlot w SlotMenuGem
+    ]
+  where
+    s = 0.75
+
 -- Tiêu đề đậm hơn (viền nhiều lớp) và căn giữa theo chiều ngang.
 -- y: vị trí dọc (0 = giữa khung hình 720 px)
 drawTitle :: Float -> Color -> Color -> Float -> String -> Picture

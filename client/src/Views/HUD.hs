@@ -27,6 +27,8 @@ import Components.UI
   , drawCoinCounter
   , drawInfoPanel
   , insideRect
+  , drawCenteredText
+  , drawTitleAt
   )
 import qualified Theme
 
@@ -165,23 +167,17 @@ drawFixedHud :: World -> Picture
 drawFixedHud w = Pictures
   [ Translate (-455) 310 $ drawPanel 370 104
   , drawAssetSlot w SlotHudAvatar
-  , Translate (-400) 334 $
+  , Translate (-475) 334 $
       drawSoul3DText 1.0 Theme.cTextWhite Theme.cDarkBorder
         (characterName (selectedChar w) ++ "  LV " ++ show (playerLevel w))
   , drawAssetSlot w SlotHudHealth
-  , Translate (-350) 304 $
-      drawHealthBar 250 16 (playerHealth w) (playerMaxHealth w)
-  , drawAssetSlot w SlotHudArmor
-  , Translate (-455) 236 $
-      drawTextShadow 0.11 Theme.cAccentBlue Theme.cDarkBorder
-        ("EXP " ++ show (playerExperience w) ++ " / " ++ show (playerLevel w * 100))
+  , Translate (-384) 304 $
+      drawHealthBar 200 16 (playerHealth w) (playerMaxHealth w)
+  , drawCenteredText (-384) 0.11 Theme.cAccentBlue Theme.cDarkBorder 268
+      ("EXP " ++ show (playerExperience w) ++ " / " ++ show (playerLevel w * 100))
   , Translate 430 320 $ drawPanel 390 86
   , drawAssetSlot w SlotHudCoin
   , Translate 345 320 $ drawCoinCounter (goldCoins w)
-  , Translate 345 291 $
-      drawSoul3DText 1.0 Theme.cTextWhite Theme.cDarkBorder
-        "LOCAL DEMO"
-  , drawMinimap w
   , Translate 560 320 $ drawSoulButton 130 42 "PAUSE"
       (insideRect (mousePos w) (560, 320) 130 42)
   , Translate 560 265 $ drawSoulButton 130 42 "SHOP"
@@ -189,11 +185,6 @@ drawFixedHud w = Pictures
   , Translate 560 210 $ drawSoulButton 130 42 "UPGRADE"
       (insideRect (mousePos w) (560, 210) 130 42)
   , if inventoryVisible w then drawInventoryBar w else Blank
-  , Translate 440 (-285) $
-      drawTextShadow 0.10 Theme.cTextMuted Theme.cDarkBorder "SKILLS LOCKED"
-  , Translate (-455) (-322) $
-      drawTextShadow 0.13 Theme.cTextWhite Theme.cDarkBorder
-        "WASD MOVE   /   LEFT CLICK AIM + ATTACK   /   E INTERACT"
   , if currentRoom w == Just Map.BossRoom && bossHealth w > 0
       then Translate 0 325 $
         drawBossHPBar "BOSS" (bossHealth w) (bossMaxHealth w)
