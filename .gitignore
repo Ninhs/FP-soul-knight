@@ -4,3 +4,6 @@ dist-newstyle/
 .ghc.environment.*
 cabal.project.local
 *.log
+*.cache
+dist-newstyle/
+*.log
