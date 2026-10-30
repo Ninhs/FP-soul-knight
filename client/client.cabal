@@ -4,17 +4,63 @@ version: 0.1.0.0
 build-type: Simple
 
 executable client
-  hs-source-dirs: src
+  hs-source-dirs: src ../server/src
   main-is: Main.hs
   other-modules:
     Network
     Render
+    Animation
+    Sprites
     Input
+    Types
+    Assets
+    ClientGameplay
+    ClientUI
+    MapLayout
+    Logic.Combat
+    Logic.Movement
+    Components.UI
+    Theme
+    Views.MainMenu
+    Views.Lobby
+    Views.CharSelect
+    Views.MapSelect
+    Views.HUD
+    Views.Shop
+    Views.Upgrade
+    Views.Overlays
   build-depends:
-    base,
+    base >= 4.14 && < 5,
     shared,
     websockets,
     aeson,
     gloss,
-    directory
+    directory,
+    filepath
+  default-language: Haskell2010
+
+test-suite client-ui-tests
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test src ../server/src
+  main-is: ClientUITest.hs
+  other-modules:
+    ClientUI
+    ClientGameplay
+    MapLayout
+    Types
+    Assets
+    Animation
+    Sprites
+    Logic.Combat
+    Logic.Movement
+    Components.UI
+    Theme
+    Views.Shop
+    Views.Upgrade
+  build-depends:
+    base >= 4.14 && < 5,
+    shared,
+    gloss,
+    directory,
+    filepath
   default-language: Haskell2010

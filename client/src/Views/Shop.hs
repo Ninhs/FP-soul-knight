@@ -8,7 +8,10 @@ import Graphics.Gloss
 import Assets
 import Types
 import Components.UI
-  ( drawSoul3DText
+  ( drawAssetAt
+  , drawAssetSlot
+  , menuBackground
+  , drawSoul3DText
   , drawSoulButton
   , drawTextShadow
   , drawPanel
@@ -22,14 +25,14 @@ drawShop w = Pictures
   , Color Theme.cOverlay $ rectangleSolid Theme.screenWidth Theme.screenHeight
   , drawPanel 1200 620
   , Translate 0 300 $
-      drawSoul3DText 2.4 Theme.cTextGold Theme.cDarkBorder "DUNGEON SHOP"
+      drawSoul3DText 2.4 Theme.cTextGold Theme.cDarkBorder "LOCAL SHOP DEMO"
   , drawAssetSlot w SlotShopkeeper
   , Translate (-470) (-55) $ drawPanel 260 150
   , Translate (-470) (-35) $
       drawSoul3DText 0.95 Theme.cTextGold Theme.cDarkBorder "TRADER"
   , Translate (-470) (-72) $
       drawTextShadow 0.11 Theme.cTextWhite Theme.cDarkBorder
-        "Choose supplies for your next run."
+        "Preview items only. Purchases are not saved."
   , Translate 475 300 $ drawPanel 250 70
   , drawAssetAt w AssetCoin (390, 300) (28, 28) Contain
   , Translate 470 300 $

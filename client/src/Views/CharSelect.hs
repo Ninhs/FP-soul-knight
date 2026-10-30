@@ -15,10 +15,12 @@ drawCharSelect w = Pictures
   , Translate (-300) 75 $ drawPanel 370 430
   , drawSelectedCharacter w
   , drawCharacterInfo w
-  , Translate (-300) (-190) $ drawSoulButton 180 48 "SWORDSMAN"
+  , drawButton (-300, -190) 180 48 "SWORDSMAN"
       (insideRect (mousePos w) (-300, -190) 180 48)
-  , Translate (-95) (-190) $ drawSoulButton 160 48 "ARCHER"
+      (selectedChar w == Swordsman) False
+  , drawButton (-95, -190) 160 48 "ARCHER"
       (insideRect (mousePos w) (-95, -190) 160 48)
+      (selectedChar w == Archer) False
   , Translate (-220) (-280) $ drawSoulButton 190 52 "CLOSE"
       (insideRect (mousePos w) (-220, -280) 190 52)
   , Translate (220) (-280) $ drawSoulButton 220 52 "SELECT"
@@ -28,7 +30,7 @@ drawCharSelect w = Pictures
 drawSelectedCharacter :: World -> Picture
 drawSelectedCharacter w = Pictures
   [ drawAssetAt w (characterAsset (selectedChar w)) (-300, 105) (230, 210) Contain
-  , Translate (-300) (-128) $
+  , Translate (-375) (-150) $
       drawSoul3DText 1.0 Theme.cTextMuted Theme.cDarkBorder "HERO PREVIEW SLOT"
   , characterSlot w Swordsman (-375)
   , characterSlot w Archer (-225)
@@ -78,6 +80,6 @@ drawCharacterInfo w = Translate 220 65 $ Pictures
       ]
 
 heroDetails :: Character -> (String, String, String)
-heroDetails Swordsman = ("SWORDSMAN", "A balanced close-range fighter.", "SWORD")
+heroDetails Swordsman = ("SWORDSMAN", "Balanced melee fighter.", "SWORD")
 heroDetails Archer = ("ARCHER", "A quick ranged specialist.", "BOW")
 heroDetails character = (show character, "A hero asset slot is reserved.", "TBD")

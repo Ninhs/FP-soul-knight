@@ -9,6 +9,7 @@ module Types.GameState
   , Result(..)
   , RoomPhase(..)
   , GameState(..)
+  , initialGameState
   ) where
 import Types.Player
 import Types.Monster
@@ -69,3 +70,5 @@ data GameState = GameState
   } deriving (Show, Generic)
 instance ToJSON GameState
 instance FromJSON GameState
+initialGameState :: GameState
+initialGameState = GameState { phase = Lobby, profiles = [] }

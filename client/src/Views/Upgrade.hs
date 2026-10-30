@@ -8,7 +8,9 @@ import Graphics.Gloss
 import Assets
 import Types
 import Components.UI
-  ( drawSoul3DText
+  ( drawAssetAt
+  , menuBackground
+  , drawSoul3DText
   , drawSoulButton
   , drawTextShadow
   , drawPanel
@@ -19,13 +21,14 @@ import qualified Theme
 
 drawUpgrade :: World -> Picture
 drawUpgrade w = Pictures
-  [ Color Theme.cOverlay $ rectangleSolid Theme.screenWidth Theme.screenHeight
+  [ menuBackground w
+  , Color Theme.cOverlay $ rectangleSolid Theme.screenWidth Theme.screenHeight
   , drawPanel 1120 630
   , Translate 0 290 $
       drawSoul3DText 2.4 Theme.cTextGold Theme.cDarkBorder "UPGRADE STATS"
   , Translate 0 250 $
       drawTextShadow 0.13 Theme.cTextWhite Theme.cDarkBorder
-        "Select a stat to improve it with gold."
+        "Local preview upgrades only. Values are not saved."
   , Translate (-340) 195 $
       drawSoul3DText 1.1 Theme.cTextGold Theme.cDarkBorder
         ("AVAILABLE GOLD: " ++ show (goldCoins w))
@@ -56,7 +59,7 @@ upgradeCard w kind x y =
         drawTextShadow 0.13 Theme.cTextMuted Theme.cDarkBorder
           ("CURRENT: " ++ show (round value :: Int) ++ "  LV " ++ show level)
     , Translate 20 2 $
-        drawProgressBar (0, 0) 170 14 0 Theme.cAccentGreen ""
+        drawProgressBar (0, 0) 170 14 (value / statLimit) Theme.cAccentGreen ""
     , Translate (-92) (-34) $
         drawSoul3DText 1.05 Theme.cTextGold Theme.cDarkBorder
           ("NEXT LEVEL COST: " ++ show price ++ " G")
@@ -73,6 +76,11 @@ upgradeCard w kind x y =
       DamageUpgrade -> (playerDamage w, damageUpgradeLevel w)
       MoveSpeedUpgrade -> (playerMoveSpeed w, speedUpgradeLevel w)
     price = upgradePrice level
+    statLimit = case kind of
+      MaxHealthUpgrade -> 200
+      ArmorUpgrade -> 100
+      DamageUpgrade -> 80
+      MoveSpeedUpgrade -> 400
     canAfford = goldCoins w >= price
     stateColor = if canAfford then Theme.cAccentGreen else Theme.cAccentRed
     stateLabel = if canAfford then "READY" else "NOT ENOUGH GOLD"

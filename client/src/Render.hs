@@ -1,13 +1,80 @@
-module Render (renderGame) where
+module Render (renderGame, renderClient) where
 
 import Graphics.Gloss
+import Components.UI (drawPauseOverlay, menuBackground)
+import ClientUI (toEnemyData, toScreenPosition)
+import Types
 import Types.GameState
+import qualified Types.GameState as GS
+import Views.CharSelect (drawCharSelect)
+import Views.HUD (drawChestRewardOverlay, drawGameHUD, drawTutorialGuide)
+import Views.Lobby (drawLobby)
+import Views.MainMenu (drawMainMenu)
+import Views.MapSelect (drawMapSelect)
+import Views.Overlays (drawConfirmMenu, drawGameResult, drawShopNotice)
+import Views.Shop (drawShop)
+import Views.Upgrade (drawUpgrade)
 
 renderGame :: GameState -> Picture
 renderGame gs = case phase gs of
   Lobby        -> renderLobby gs
   Playing ms   -> renderMap ms
   RoomResult r -> renderResult r
+
+renderClient :: ClientState -> Picture
+renderClient state = case appView state of
+  MainMenuView -> drawMainMenu state
+  LobbyView -> drawLobby state
+  CharacterSelectView -> drawCharSelect state
+  MapSelectView -> drawMapSelect state
+  TutorialView -> drawTutorialGuide state
+  InGameView -> drawGameHUD (combatWorld state)
+  ShopView -> drawShop state
+  UpgradeView -> drawUpgrade state
+  PausedView -> Pictures
+    [ drawGameHUD (combatWorld state)
+    , drawPauseOverlay (mousePos state)
+    ]
+  ChestRewardView -> Pictures
+    [ drawGameHUD (combatWorld state)
+    , drawChestRewardOverlay state (ChestReward 120 25 10) (mousePos state)
+    ]
+  ShopNoticeView -> Pictures
+    [ overlayBackground state
+    , drawShopNotice (noticeText state) (mousePos state)
+    ]
+  ConfirmMenuView -> Pictures
+    [ drawGameHUD (combatWorld state)
+    , drawConfirmMenu (mousePos state)
+    ]
+  VictoryView -> Pictures [menuBackground state, drawGameResult True state]
+  DefeatView -> Pictures [menuBackground state, drawGameResult False state]
+
+overlayBackground :: ClientState -> Picture
+overlayBackground state = case returnView state of
+  MainMenuView -> drawMainMenu state
+  LobbyView -> drawLobby state
+  CharacterSelectView -> drawCharSelect state
+  MapSelectView -> drawMapSelect state
+  TutorialView -> drawTutorialGuide state
+  InGameView -> drawGameHUD (combatWorld state)
+  ShopView -> drawShop state
+  UpgradeView -> drawUpgrade state
+  _ -> menuBackground state
+
+combatWorld :: ClientState -> World
+combatWorld state =
+  let localMap = localMapState state
+      syncedEnemies = enemies state
+  in state
+    { playerPos = playerPosition state
+    , enemies = syncedEnemies
+    , playerMaxHealth = max 1 (characterMaxHp (characterStats (selectedChar state)))
+    , projectiles =
+        [ ProjectileData (toScreenPosition (GS.bPosition bullet))
+        | bullet <- GS.bullets localMap
+        ]
+    }
 
 renderLobby :: GameState -> Picture
 renderLobby gs = Translate (-250) 0 $ Scale 0.25 0.25 $ Color white $
