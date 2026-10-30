@@ -1,4 +1,11 @@
-module Input (InputRefs, newInputRefs, handleEvent) where
+module Input
+  ( InputRefs
+  , newInputRefs
+  , handleEvent
+  , movementDirection
+  , aimPosition
+  , takeAttackRequest
+  ) where
 
 import Data.IORef
 import Graphics.Gloss.Interface.IO.Game
@@ -10,37 +17,79 @@ data InputRefs = InputRefs
   , keyS :: IORef Bool
   , keyD :: IORef Bool
   , mousePos :: IORef (Float, Float)
+  , mouseLeft :: IORef Bool
+  , attackRequest :: IORef Bool
   }
 
 newInputRefs :: IO InputRefs
 newInputRefs = InputRefs
   <$> newIORef False <*> newIORef False
   <*> newIORef False <*> newIORef False
-  <*> newIORef (0, 0)
+  <*> newIORef (0, 0) <*> newIORef False <*> newIORef False
+
+movementDirection :: InputRefs -> IO (Float, Float)
+movementDirection refs = do
+  movingUp <- readIORef (keyW refs)
+  movingLeft <- readIORef (keyA refs)
+  movingDown <- readIORef (keyS refs)
+  movingRight <- readIORef (keyD refs)
+  pure
+    ( (if movingRight then 1 else 0) - (if movingLeft then 1 else 0)
+    , (if movingUp then 1 else 0) - (if movingDown then 1 else 0)
+    )
+
+aimPosition :: InputRefs -> IO (Float, Float)
+aimPosition = readIORef . mousePos
+
+takeAttackRequest :: InputRefs -> IO Bool
+takeAttackRequest refs = do
+  requested <- readIORef (attackRequest refs)
+  writeIORef (attackRequest refs) False
+  pure requested
 
 handleEvent :: (ClientMsg -> IO ()) -> InputRefs -> Event -> IO ()
-handleEvent sendInput refs ev = do
-  case ev of
-    EventKey (Char 'w') st _ _ -> writeIORef (keyW refs) (isDown st)
-    EventKey (Char 'a') st _ _ -> writeIORef (keyA refs) (isDown st)
-    EventKey (Char 's') st _ _ -> writeIORef (keyS refs) (isDown st)
-    EventKey (Char 'd') st _ _ -> writeIORef (keyD refs) (isDown st)
-    EventMotion pos -> writeIORef (mousePos refs) pos
-    EventKey (MouseButton LeftButton) Down _ _ -> sendAttack True
+handleEvent sendInput refs event = do
+  case event of
+    EventKey key state _ position -> do
+      updateMovement key state
+      case key of
+        MouseButton button -> do
+          writeIORef (mousePos refs) position
+          if button == LeftButton then updateAttack state else pure ()
+        _ -> pure ()
+    EventMotion position -> writeIORef (mousePos refs) position
     _ -> pure ()
-  sendMove
+  sendCurrentInput
   where
     isDown Down = True
-    isDown Up   = False
+    isDown Up = False
 
-    sendMove = do
-      w <- readIORef (keyW refs); a <- readIORef (keyA refs)
-      s <- readIORef (keyS refs); d <- readIORef (keyD refs)
-      mp <- readIORef (mousePos refs)
-      let dx = (if d then 1 else 0) - (if a then 1 else 0)
-          dy = (if w then 1 else 0) - (if s then 1 else 0)
-      sendInput (InputMsg (dx, dy) mp False)
+    updateAttack state = do
+      wasDown <- readIORef (mouseLeft refs)
+      let nowDown = isDown state
+      if nowDown && not wasDown
+        then writeIORef (attackRequest refs) True
+        else pure ()
+      writeIORef (mouseLeft refs) nowDown
 
-    sendAttack v = do
-      mp <- readIORef (mousePos refs)
-      sendInput (InputMsg (0, 0) mp v)
+    updateMovement key state =
+      case key of
+        Char 'w' -> writeIORef (keyW refs) (isDown state)
+        Char 'W' -> writeIORef (keyW refs) (isDown state)
+        Char 'a' -> writeIORef (keyA refs) (isDown state)
+        Char 'A' -> writeIORef (keyA refs) (isDown state)
+        Char 's' -> writeIORef (keyS refs) (isDown state)
+        Char 'S' -> writeIORef (keyS refs) (isDown state)
+        Char 'd' -> writeIORef (keyD refs) (isDown state)
+        Char 'D' -> writeIORef (keyD refs) (isDown state)
+        SpecialKey KeyUp -> writeIORef (keyW refs) (isDown state)
+        SpecialKey KeyLeft -> writeIORef (keyA refs) (isDown state)
+        SpecialKey KeyDown -> writeIORef (keyS refs) (isDown state)
+        SpecialKey KeyRight -> writeIORef (keyD refs) (isDown state)
+        _ -> pure ()
+
+    sendCurrentInput = do
+      direction <- movementDirection refs
+      aim <- readIORef (mousePos refs)
+      attacking <- readIORef (mouseLeft refs)
+      sendInput (InputMsg direction aim attacking)

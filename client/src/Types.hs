@@ -1,20 +1,276 @@
 module Types
   ( ViewState(..)
   , ClientState(..)
+  , World
+  , Character(..)
+  , CharacterStats(..)
+  , MapSize(..)
+  , EnemyKind(..)
+  , EnemyData(..)
+  , ProjectileData(..)
+  , ChestState(..)
+  , ChestData(..)
+  , ChestReward(..)
+  , ShopItemKind(..)
+  , UpgradeKind(..)
+  , RoomId(..)
+  , characterStats
+  , mapDimensions
+  , mapRewardGold
+  , worldScale
+  , toWorldPosition
+  , toScreenPosition
+  , enemyAsset
+  , initialClientState
   ) where
 
-import Graphics.Gloss (Picture)
-import Types.GameState (GameState)
+import Animation (AnimKind(..), AnimState(..), SpriteSet(..), startAnim)
+import Assets (AssetId(..), GameAssets)
+import qualified Types.GameState as GS
+import Types.GameState (GameState, initialGameState)
+import MapLayout (MapSize(..), RoomId(..), mapDimensions, startPosition)
 
 data ViewState
   = MainMenuView
   | LobbyView
+  | CharacterSelectView
+  | MapSelectView
+  | TutorialView
   | InGameView
+  | ShopView
+  | UpgradeView
+  | PausedView
+  | ChestRewardView
+  | ShopNoticeView
+  | ConfirmMenuView
+  | VictoryView
+  | DefeatView
   deriving (Eq, Show)
 
 data ClientState = ClientState
-  { appAssets :: [(String, Picture)]
+  { appAssets :: GameAssets
   , appView :: ViewState
   , sharedState :: GameState
   , mousePos :: (Float, Float)
+  , playerPosition :: (Float, Float)
+  , localMapState :: GS.MapState
+  , localAttackCooldown :: Float
+  , localMonsterAttackCooldowns :: [(Int, Float)]
+  , clearedRooms :: [RoomId]
+  , activatedRooms :: [RoomId]
+  , currentRoom :: Maybe RoomId
+  , bossDefeated :: Bool
+  , selectedChar :: Character
+  , selectedMapSize :: MapSize
+  , goldCoins :: Int
+  , gems :: Int
+  , roomCode :: String
+  , roomInput :: String
+  , roomInputActive :: Bool
+  , isReady :: Bool
+  , isMultiplayer :: Bool
+  , statusText :: String
+  , playerPos :: (Float, Float)
+  , enemies :: [EnemyData]
+  , projectiles :: [ProjectileData]
+  , treasureChest :: ChestData
+  , playerLevel :: Int
+  , playerExperience :: Int
+  , playerHealth :: Float
+  , playerMaxHealth :: Float
+  , playerArmor :: Float
+  , playerMaxArmor :: Float
+  , playerEnergy :: Float
+  , playerMaxEnergy :: Float
+  , playerDamage :: Float
+  , playerMoveSpeed :: Float
+  , bossHealth :: Float
+  , bossMaxHealth :: Float
+  , inventoryVisible :: Bool
+  , shopEquipmentTab :: Bool
+  , shopInventory :: [(ShopItemKind, Int)]
+  , shopRefreshes :: Int
+  , upgradeRefreshes :: Int
+  , healthUpgradeLevel :: Int
+  , armorUpgradeLevel :: Int
+  , damageUpgradeLevel :: Int
+  , speedUpgradeLevel :: Int
+  , attackEffectPos :: (Float, Float)
+  , attackEffectTimer :: Float
+  , tutorialVisible :: Bool
+  , isVictory :: Bool
+  , noticeText :: String
+  , returnView :: ViewState
+  , playerAnim :: AnimState
+  , playerFacingRight :: Bool
+  , enemyCorpses :: [EnemyData]
+  , bossAnim :: AnimState
   }
+
+type World = ClientState
+
+data Character = Swordsman | Archer | Knight | Bomber | Mage
+  deriving (Eq, Show, Read, Enum, Bounded)
+
+data CharacterStats = CharacterStats
+  { characterMaxHp :: Float
+  , characterDamage :: Float
+  , characterDefense :: Float
+  , characterMoveSpeed :: Float
+  } deriving (Eq, Show)
+
+data EnemyKind = MeleeEnemy | RangedEnemy | TankEnemy | HighDamageEnemy
+  deriving (Eq, Show, Read, Enum, Bounded)
+
+data EnemyData = EnemyData
+  { enemyKind :: EnemyKind
+  , enemyPos :: (Float, Float)
+  , enemyCurrentHp :: Float
+  , enemyMaxHp :: Float
+  , enemyIsAlive :: Bool
+  , enemyId :: Int
+  , enemyAnim :: AnimState
+  , enemyFacingRight :: Bool
+  , enemySprite :: SpriteSet
+  } deriving (Eq, Show)
+
+data ProjectileData = ProjectileData
+  { projectilePos :: (Float, Float)
+  } deriving (Eq, Show)
+
+data ChestState = ChestClosed | ChestOpened | ChestClaimed
+  deriving (Eq, Show)
+
+data ChestData = ChestData
+  { chestPosition :: (Float, Float)
+  , chestState :: ChestState
+  } deriving (Eq, Show)
+
+data ChestReward = ChestReward
+  { rewardGold :: Int
+  , rewardHealth :: Float
+  , rewardArmor :: Float
+  } deriving (Eq, Show)
+
+data ShopItemKind
+  = SmallHealthPotion
+  | LightArmor
+  | LargeHealthPotion
+  | HeavyArmor
+  | DamageCharm
+  | SwiftBoots
+  deriving (Eq, Show, Read, Enum, Bounded)
+
+data UpgradeKind = MaxHealthUpgrade | ArmorUpgrade | DamageUpgrade | MoveSpeedUpgrade
+  deriving (Eq, Show, Read, Enum, Bounded)
+
+characterStats :: Character -> CharacterStats
+characterStats Swordsman = CharacterStats 120 34 15 220
+characterStats Archer = CharacterStats 90 30 5 250
+characterStats Knight = CharacterStats 150 25 25 190
+characterStats Bomber = CharacterStats 100 38 8 210
+characterStats Mage = CharacterStats 85 42 3 230
+
+mapRewardGold :: MapSize -> Int
+mapRewardGold LargeMap = 800
+
+worldScale :: Float
+worldScale = 35
+
+toWorldPosition :: (Float, Float) -> (Float, Float)
+toWorldPosition (x, y) = (x / worldScale, y / worldScale)
+
+toScreenPosition :: (Float, Float) -> (Float, Float)
+toScreenPosition (x, y) = (x * worldScale, y * worldScale)
+
+enemyAsset :: EnemyKind -> AssetId
+enemyAsset MeleeEnemy = AssetOrc
+enemyAsset RangedEnemy = AssetMonster
+enemyAsset TankEnemy = AssetOrc
+enemyAsset HighDamageEnemy = AssetDemon
+
+initialClientState :: GameAssets -> ClientState
+initialClientState assets =
+  let stats = characterStats Swordsman
+      initialPosition = startPosition SmallMap
+      initialPlayer = GS.Player
+        { GS.playerId = 1
+        , GS.position = toWorldPosition initialPosition
+        , GS.stats = GS.Stats
+            { GS.hp = round (characterMaxHp stats)
+            , GS.maxHp = round (characterMaxHp stats)
+            , GS.damage = round (characterDamage stats)
+            , GS.moveSpeed = characterMoveSpeed stats / worldScale
+            , GS.atkSpeed = 0.45
+            }
+        , GS.status = GS.Alive
+        , GS.pendingExp = 0
+        , GS.pendingGold = 0
+        }
+  in ClientState
+    { appAssets = assets
+    , appView = MainMenuView
+    , sharedState = initialGameState
+    , mousePos = (0, 0)
+    , playerPosition = initialPosition
+    , localMapState = GS.MapState
+        { GS.mapIndex = 1
+        , GS.isBossMap = False
+        , GS.players = [initialPlayer]
+        , GS.monsters = []
+        , GS.bullets = []
+        , GS.drops = []
+        , GS.portal = GS.Portal False (0, 0)
+        }
+    , localAttackCooldown = 0
+    , localMonsterAttackCooldowns = []
+    , clearedRooms = []
+    , activatedRooms = []
+    , currentRoom = Just StartRoom
+    , bossDefeated = False
+    , selectedChar = Swordsman
+    , selectedMapSize = SmallMap
+    , goldCoins = 500
+    , gems = 10
+    , roomCode = "LOCAL-01"
+    , roomInput = ""
+    , roomInputActive = False
+    , isReady = False
+    , isMultiplayer = False
+    , statusText = "Choose a mode to begin."
+    , playerPos = initialPosition
+    , enemies = []
+    , projectiles = []
+    , treasureChest = ChestData (250, 150) ChestClosed
+    , playerLevel = 1
+    , playerExperience = 0
+    , playerHealth = characterMaxHp stats
+    , playerMaxHealth = characterMaxHp stats
+    , playerArmor = characterDefense stats
+    , playerMaxArmor = characterDefense stats
+    , playerEnergy = 100
+    , playerMaxEnergy = 100
+    , playerDamage = characterDamage stats
+    , playerMoveSpeed = characterMoveSpeed stats
+    , bossHealth = 300
+    , bossMaxHealth = 300
+    , inventoryVisible = False
+    , shopEquipmentTab = False
+    , shopInventory = []
+    , shopRefreshes = 0
+    , upgradeRefreshes = 0
+    , healthUpgradeLevel = 0
+    , armorUpgradeLevel = 0
+    , damageUpgradeLevel = 0
+    , speedUpgradeLevel = 0
+    , attackEffectPos = (0, 0)
+    , attackEffectTimer = 0
+    , tutorialVisible = False
+    , isVictory = False
+    , noticeText = ""
+    , returnView = MainMenuView
+    , playerAnim = startAnim Idle
+    , playerFacingRight = True
+    , enemyCorpses = []
+    , bossAnim = startAnim Idle
+    }

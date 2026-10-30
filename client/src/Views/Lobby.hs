@@ -47,13 +47,13 @@ drawJoinPanel w = Pictures
       , Color Theme.cPanelBg $ rectangleSolid 314 52
       , Translate (-145) (-6) $
           drawTextShadow 0.14 Theme.cTextWhite Theme.cDarkBorder
-            (if null (roomInput w) then "ENTER ROOM CODE" else roomInput w)
+            (if null (roomInput w) then "ROOM CODE (OPTIONAL)" else roomInput w)
       ]
   , Translate 145 0 $ drawSoulButton 130 58 "JOIN"
       (insideRect (mousePos w) (215, 215) 130 58)
   , Translate (-70) (-39) $
       drawTextShadow 0.10 Theme.cTextMuted Theme.cDarkBorder
-        "TYPE DIGITS THEN PRESS JOIN"
+        "LOCAL MOCK - JOIN DOES NOT CONNECT"
   ]
 
 drawSlots :: World -> Picture

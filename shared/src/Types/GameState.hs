@@ -73,13 +73,12 @@ data Monster = Monster
 instance ToJSON Monster
 instance FromJSON Monster
 
--- Bullet, Drop, Portal
-
 data Bullet = Bullet
   { bPosition :: (Float, Float)
   , bVelocity :: (Float, Float)
   , bOwner    :: Int
   , bDamage   :: Int
+  , bLife     :: Float
   } deriving (Show, Generic)
 instance ToJSON Bullet
 instance FromJSON Bullet
@@ -148,3 +147,9 @@ data GameState = GameState
   } deriving (Show, Generic)
 instance ToJSON GameState
 instance FromJSON GameState
+
+initialGameState :: GameState
+initialGameState = GameState
+  { phase = Lobby
+  , profiles = []
+  }

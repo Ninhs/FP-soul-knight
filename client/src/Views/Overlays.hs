@@ -12,18 +12,16 @@ drawGameResult isVictory w = Pictures
   , Translate 0 125 $ drawSoul3DText 3.4 titleColor cDarkBorder title
   , Translate 0 40 $
       drawSoul3DText 1.6 cTextWhite cDarkBorder
-        ("HERO LEVEL: " ++ show (playerLevel w))
+        ("PREVIEW LEVEL: " ++ show (playerLevel w))
   , Translate 0 0 $
       drawSoul3DText 1.5 cPrimaryGold cDarkBorder
-        ("GOLD: " ++ show (goldCoins w) ++ " G")
+        ("DEMO GOLD: " ++ show (goldCoins w) ++ " G")
   , Translate 0 (-42) $
       drawSoul3DText 1.5 Theme.cAccentBlue cDarkBorder
-        ("EXP: " ++ show (playerExperience w))
-  , if isVictory
-      then Translate 0 (-82) $
-        drawSoul3DText 1.2 Theme.cAccentGreen cDarkBorder
-          ("RUN REWARD: +" ++ show (mapRewardGold (selectedMapSize w)) ++ " G")
-      else Blank
+        ("DEMO EXP: " ++ show (playerExperience w))
+  , Translate 0 (-82) $
+      drawTextShadow 0.11 Theme.cTextMuted Theme.cDarkBorder
+        "LOCAL PREVIEW - PROGRESS IS NOT SAVED"
   , Translate (-145) (-130) $
       drawSoulButton 250 58 "PLAY AGAIN"
         (insideRect mouse (-145, -130) 250 58)
@@ -33,7 +31,7 @@ drawGameResult isVictory w = Pictures
   ]
   where
     mouse = mousePos w
-    title = if isVictory then "VICTORY!" else "GAME OVER"
+    title = if isVictory then "ROOM CLEARED" else "DEFEAT"
     titleColor = if isVictory then Theme.cAccentGreen else cAccentRed
 
 drawShopNotice :: String -> (Float, Float) -> Picture

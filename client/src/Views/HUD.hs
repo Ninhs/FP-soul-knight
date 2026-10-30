@@ -2,14 +2,21 @@ module Views.HUD
   ( drawChestRewardOverlay
   , drawGameHUD
   , drawTutorialGuide
-  , mapExit
   ) where
-
+import MapLayout (Link(..), RoomId(..), linkDoor, openLinks, roomAt, roomRect)
 import Graphics.Gloss
+import Animation (AnimState, currentFrame, animKind, AnimKind(..), SpriteSet(..))
 import Assets
+import qualified MapLayout as Map
+import Sprites (framesOf, playerSet)
 import Types
 import Components.UI
-  ( drawSoul3DText
+  ( characterAsset
+  , drawAssetAt
+  , drawAssetSlot
+  , mapAsset
+  , menuBackground
+  , drawSoul3DText
   , drawSoulButton
   , drawTextShadow
   , drawPanel
@@ -27,12 +34,12 @@ drawGameHUD w = Pictures
   [ Translate (-px) (-py) $ Pictures
       [ drawAssetAt w (mapAsset (selectedMapSize w)) (0, 0)
           (fromIntegral mapColumns * Theme.dungeonTileSize,
-           fromIntegral mapRows * Theme.dungeonTileSize) Contain
-      , if mapIndex w < 3 then drawPortal w (mapExit (selectedMapSize w)) else Blank
+           fromIntegral mapRows * Theme.dungeonTileSize) Stretch
+      , drawWalls w
+      , drawClosedDoors w
       , drawChest w
-      , Pictures (map (drawEnemy w) (enemies w))
+      , Pictures (map (drawEnemy w) (enemyCorpses w ++ enemies w))
       , Pictures (map (drawProjectile w) (projectiles w))
-      , drawBossIfPresent w
       , drawPlayer w
       , drawAttackEffect w (attackEffectTimer w) (attackEffectPos w)
       ]
@@ -43,17 +50,24 @@ drawGameHUD w = Pictures
     (px, py) = playerPos w
     (mapColumns, mapRows) = mapDimensions (selectedMapSize w)
 
-mapExit :: MapSize -> (Float, Float)
-mapExit mapSize =
-  let (columns, rows) = mapDimensions mapSize
-      halfWidth = fromIntegral columns * Theme.dungeonTileSize / 2
-      halfHeight = fromIntegral rows * Theme.dungeonTileSize / 2
-  in (halfWidth - Theme.dungeonTileSize * 1.5,
-      halfHeight - Theme.dungeonTileSize * 1.5)
+drawWalls :: World -> Picture
+drawWalls w =
+  drawMapRects (makeColor 0.0 0.0 0.0 0) (Map.permanentWalls (selectedMapSize w))
 
-drawPortal :: World -> (Float, Float) -> Picture
-drawPortal w position =
-  drawAssetAt w AssetPortal position (76, 76) Contain
+drawClosedDoors :: World -> Picture
+drawClosedDoors w =
+  drawMapRects (makeColor 0.0 0.0 0.0 0)
+    (Map.closedDoorRects (selectedMapSize w)
+      (Map.openLinks (clearedRooms w)))
+
+drawMapRects :: Color -> [Map.Rect] -> Picture
+drawMapRects color = Pictures . map drawRect
+  where
+    drawRect bounds =
+      Translate (Map.rectX bounds + Map.rectWidth bounds / 2)
+        (Map.rectY bounds + Map.rectHeight bounds / 2)
+        $ Color color
+        $ rectangleSolid (Map.rectWidth bounds) (Map.rectHeight bounds)
 
 drawChest :: World -> Picture
 drawChest w = Pictures
@@ -71,16 +85,31 @@ drawChest w = Pictures
 
 drawEnemy :: World -> EnemyData -> Picture
 drawEnemy w enemy
-  | not (enemyIsAlive enemy) = Blank
+  | not (enemyIsAlive enemy) = Translate x y $
+      drawAnimated (enemyAnim enemy) (enemySprite enemy)
+        (enemyFacingRight enemy) (0, 0) spriteSize (appAssets w)
   | otherwise = Translate x y $ Pictures
-      [ drawAssetAt w (enemyAsset (enemyKind enemy)) (0, 0) (54, 64) Contain
-      , Translate 0 42 $ enemyHealthBar enemy
-      , Translate 0 (-42) $
+      [ drawAnimated (enemyAnim enemy) (enemySprite enemy)
+          (enemyFacingRight enemy) (0, 0) spriteSize (appAssets w)
+      , Translate 0 healthBarY $ enemyHealthBar enemy
+      , Translate 0 (negate healthBarY) $
           drawTextShadow 0.10 Theme.cTextWhite Theme.cDarkBorder
             (enemyLabel (enemyKind enemy))
       ]
   where
     (x, y) = enemyPos enemy
+    bossEnemy = enemyKind enemy == HighDamageEnemy
+    spriteSize = if bossEnemy then (140, 140) else (54, 64)
+    healthBarY = if bossEnemy then 78 else 42
+
+-- Sprite frames use a 32 px source scale, so the boss is intentionally larger.
+drawAnimated :: AnimState -> SpriteSet -> Bool -> (Float, Float) -> (Float, Float) -> GameAssets -> Picture
+drawAnimated anim set facing (x, y) (width, height) assets =
+  Translate x y $ Scale sx scale frame
+  where
+    frame = currentFrame (framesOf assets set (animKind anim)) anim
+    scale = min (width / 32) (height / 32)
+    sx = if facing then scale else negate scale
 
 enemyHealthBar :: EnemyData -> Picture
 enemyHealthBar enemy =
@@ -94,11 +123,12 @@ enemyLabel :: EnemyKind -> String
 enemyLabel MeleeEnemy = "MELEE"
 enemyLabel RangedEnemy = "RANGED"
 enemyLabel TankEnemy = "TANK"
-enemyLabel HighDamageEnemy = "ASSASSIN"
+enemyLabel HighDamageEnemy = "BOSS"
 
 drawPlayer :: World -> Picture
 drawPlayer w = Pictures
-  [ drawAssetAt w (characterAsset (selectedChar w)) (playerPos w) (56, 68) Contain
+  [ drawAnimated (playerAnim w) (playerSet (selectedChar w)) (playerFacingRight w)
+      (playerPos w) (56, 68) (appAssets w)
   , Translate x (y + 43) $
       drawTextShadow 0.11 Theme.cTextWhite Theme.cDarkBorder
         (characterName (selectedChar w))
@@ -120,14 +150,14 @@ characterWeapon Mage = "STAFF"
 characterWeapon _ = "SWORD"
 
 drawAttackEffect :: World -> Float -> (Float, Float) -> Picture
-drawAttackEffect w duration position
+drawAttackEffect _ duration position
   | duration <= 0 = Blank
-  | otherwise = drawAssetAt w AssetAttackEffect position (100, 100) Contain
-
-drawBossIfPresent :: World -> Picture
-drawBossIfPresent w
-  | mapIndex w /= 3 = Blank
-  | otherwise = drawAssetAt w AssetBoss (250, 0) (150, 150) Contain
+  | otherwise = Translate x y $ Pictures
+      [ Color (makeColor 1.0 0.78 0.18 0.9) $ thickCircle 34 5
+      , Color (makeColor 1.0 0.92 0.55 0.85) $ circleSolid 7
+      ]
+  where
+    (x, y) = position
 
 drawFixedHud :: World -> Picture
 drawFixedHud w = Pictures
@@ -147,12 +177,12 @@ drawFixedHud w = Pictures
   , Translate (-455) 236 $
       drawTextShadow 0.11 Theme.cAccentBlue Theme.cDarkBorder
         ("EXP " ++ show (playerExperience w) ++ " / " ++ show (playerLevel w * 100))
-  , Translate 470 325 $ drawPanel 370 78
+  , Translate 430 320 $ drawPanel 390 86
   , drawAssetSlot w SlotHudCoin
-  , Translate 410 326 $ drawCoinCounter (goldCoins w)
-  , Translate 390 296 $
+  , Translate 345 320 $ drawCoinCounter (goldCoins w)
+  , Translate 345 291 $
       drawSoul3DText 1.0 Theme.cTextWhite Theme.cDarkBorder
-        ("STAGE " ++ show (mapIndex w) ++ " / 3")
+        "LOCAL DEMO"
   , drawMinimap w
   , Translate 560 320 $ drawSoulButton 130 42 "PAUSE"
       (insideRect (mousePos w) (560, 320) 130 42)
@@ -161,11 +191,12 @@ drawFixedHud w = Pictures
   , Translate 560 210 $ drawSoulButton 130 42 "UPGRADE"
       (insideRect (mousePos w) (560, 210) 130 42)
   , if inventoryVisible w then drawInventoryBar w else Blank
-  , drawSkillSlots w
+  , Translate 440 (-285) $
+      drawTextShadow 0.10 Theme.cTextMuted Theme.cDarkBorder "SKILLS LOCKED"
   , Translate (-455) (-322) $
       drawTextShadow 0.13 Theme.cTextWhite Theme.cDarkBorder
         "WASD MOVE   /   LEFT CLICK AIM + ATTACK   /   E INTERACT"
-  , if mapIndex w == 3
+  , if currentRoom w == Just Map.BossRoom && bossHealth w > 0
       then Translate 0 325 $
         drawBossHPBar "BOSS" (bossHealth w) (bossMaxHealth w)
       else Blank
@@ -175,14 +206,38 @@ drawMinimap :: World -> Picture
 drawMinimap w = Translate 390 165 $ Pictures
   [ drawPanel 190 140
   , drawAssetAt w AssetMinimapFrame (0, 0) (190, 140) Contain
-  , drawAssetAt w (mapAsset (selectedMapSize w)) (0, 0) (130, 84) Contain
   , Translate 0 48 $
-      drawSoul3DText 0.9 Theme.cTextGold Theme.cDarkBorder "MINIMAP SLOT"
-  , Translate 0 (-47) $
-      drawTextShadow 0.10 Theme.cTextMuted Theme.cDarkBorder
-        ("X " ++ show (round (fst (playerPos w)) :: Int)
-          ++ "   Y " ++ show (round (snd (playerPos w)) :: Int))
+      drawSoul3DText 0.9 Theme.cTextGold Theme.cDarkBorder "ROOM RADAR"
+  , Translate 0 1 $ Pictures
+      [ Color (makeColor 0.025 0.055 0.075 1) $ rectangleSolid 130 78
+      , Color (makeColor 0.16 0.31 0.38 1) $ rectangleWire 130 78
+      , Color (makeColor 0.13 0.23 0.27 1) $ line [(-65, 0), (65, 0)]
+      , Color (makeColor 0.13 0.23 0.27 1) $ line [(0, -39), (0, 39)]
+      , Pictures (map drawEnemyMarker (filter enemyIsAlive (enemies w)))
+      , drawPlayerMarker
+      ]
+  , Translate 0 (-51) $ Pictures
+      [ Translate (-37) 0 $
+          drawTextShadow 0.09 Theme.cAccentBlue Theme.cDarkBorder "YOU"
+      , Translate 31 0 $
+          drawTextShadow 0.09 Theme.cAccentRed Theme.cDarkBorder "ENEMY"
+      ]
   ]
+  where
+    drawPlayerMarker =
+      let (x, y) = radarPosition (playerPos w)
+      in Translate x y $ Pictures
+        [ Color Theme.cTextWhite $ circleSolid 5
+        , Color Theme.cAccentBlue $ circleSolid 3
+        ]
+    drawEnemyMarker enemy =
+      let (x, y) = radarPosition (enemyPos enemy)
+      in Translate x y $ Color Theme.cAccentRed $ circleSolid 4
+    radarPosition (x, y) =
+      ( clamp (-62) 62 ((x + 360) / 720 * 124 - 62)
+      , clamp (-36) 36 ((y + 260) / 520 * 72 - 36)
+      )
+    clamp lower upper = max lower . min upper
 
 drawStatusPanel :: World -> Picture
 drawStatusPanel w = Pictures
@@ -308,14 +363,12 @@ drawTutorialPanel w = Pictures
       drawSoul3DText 2.2 Theme.cTextGold Theme.cDarkBorder "FIELD GUIDE"
   , guideRow 115 "WASD" "Move in four directions or diagonally"
   , guideRow 65 "LEFT CLICK" "Aim with the pointer and attack"
-  , guideRow 15 "Q / R" "Use the available skill slots"
+  , guideRow 15 "SKILLS" "Not available in the local preview"
   , guideRow (-35) "E" "Interact with nearby objects"
   , guideRow (-85) "I / 1-4" "Show inventory / use an item"
-  , drawAssetSlot w SlotHudSkill1
-  , drawAssetSlot w SlotHudSkill2
   , Translate (-285) (-150) $
       drawTextShadow 0.11 Theme.cTextMuted Theme.cDarkBorder
-        "SKILL AND INVENTORY ASSET SLOTS"
+        "Local preview data is temporary and is not saved."
   , Translate 0 (-190) $
       drawTextShadow 0.11 Theme.cAccentBlue Theme.cDarkBorder
         "MOCK ENEMY AND REWARD STATE IS LOCAL ONLY"
