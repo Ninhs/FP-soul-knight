@@ -1,6 +1,6 @@
 module Main where
 
-import Room (newRooms, createRoom)
+import Room (newRooms)
 import Network (runServer)
 import DB (connectDB, initSchema)
 
@@ -9,6 +9,5 @@ main = do
   conn <- connectDB
   initSchema conn
   rooms <- newRooms
-  code <- createRoom rooms
-  putStrLn ("Phong test da tao, ma phong: " ++ code)
+  putStrLn "Server san sang: client gui JoinRoom voi ma phong rong de tao phong moi"
   runServer rooms

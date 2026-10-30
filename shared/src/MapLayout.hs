@@ -28,6 +28,9 @@ module MapLayout
   , roomAt
   , homeRoomOfMonster
   , monsterSpawns
+  , worldScale
+  , toWorldPosition
+  , toScreenPosition
   ) where
 
 import qualified Types.GameState as GS
@@ -215,3 +218,15 @@ monsterSpawns _ =
   where
     regular (fx, fy) attack body hp damage attackRate =
       MonsterSpawn (fx, fy) (GS.Regular attack body) hp damage attackRate
+
+
+-- Đổi giữa toạ độ pixel của map và toạ độ "world" mà server/GameState dùng.
+-- (client/src/Types.hs đang có bản sao cùng giá trị 35.)
+worldScale :: Float
+worldScale = 35
+
+toWorldPosition :: (Float, Float) -> (Float, Float)
+toWorldPosition (x, y) = (x / worldScale, y / worldScale)
+
+toScreenPosition :: (Float, Float) -> (Float, Float)
+toScreenPosition (x, y) = (x * worldScale, y * worldScale)

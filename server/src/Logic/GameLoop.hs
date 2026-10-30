@@ -1,13 +1,9 @@
 module Logic.GameLoop
-  ( gameLoop
-  , updateStep
+  ( updateStep
+  , generateDropsIO
   ) where
 
 import System.Random (randomRIO)
-import Control.Concurrent (threadDelay)
-import Control.Concurrent.STM
-import Control.Monad (forever)
-import Data.List (partition)
 
 import Logic.Movement (distance)
 import Logic.Combat
@@ -15,56 +11,19 @@ import Logic.Combat
   , resolvePlayerBullets
   , resolveMonsterBullets
   , splitDeadMonsters
-  , circlesOverlap
   , playerRadius
   )
 import Logic.AI (updateAI)
-import Logic.Portal (updatePortal, roomOutcome)
+import Logic.Portal (updatePortal)
 import Types.GameState
-
--- Hằng số vòng lặp
-targetFPS :: Int
-targetFPS = 60
-
-frameTimeMicros :: Int
-frameTimeMicros = 1000000 `div` targetFPS  -- ~16666 microseconds (16.6ms)
-
-dt :: Float
-dt = 1.0 / fromIntegral targetFPS          -- ~0.01667 giây mỗi frame
 
 -- Bán kính nhặt đồ
 pickupRadius :: Float
 pickupRadius = 1.2
 
--- 1. VÒNG LẶP CHÍNH (Game Loop Run)
+-- (Vòng lặp theo phòng nằm ở RoomLoop.hs; file này chỉ chứa phần tính toán của 1 tick.)
 
--- Vòng lặp vô hạn chạy trên Server thread
-gameLoop :: TVar GameState -> IO ()
-gameLoop tvState = forever $ do
-  gs <- readTVarIO tvState
-  case phase gs of
-    Playing ms -> do
-      -- A. Lấy danh sách quái đã chết ở frame này
-      let (_, deadMonsters) = splitDeadMonsters (monsters ms)
-      
-      -- B. Sinh Drop ngẫu nhiên trong IO cho từng con quái chết
-      newRandomDrops <- mapM generateDropsIO deadMonsters
-      let dropsToAdd = concat newRandomDrops
-
-      -- C. Cập nhật MapState (truyền dropsToAdd vào updateStep)
-      let ms' = updateStep dt dropsToAdd ms
-      
-      let nextPhase = case roomOutcome ms' of
-                        Just result -> RoomResult result
-                        Nothing     -> Playing ms'
-      
-      atomically $ writeTVar tvState (gs { phase = nextPhase })
-
-    _ -> pure () -- Nếu ở Lobby hoặc RoomResult thì không update
-
-  threadDelay frameTimeMicros
-
--- 2. TÍNH TOÁN THEO MỖI FRAME (Tick Step)
+-- TÍNH TOÁN THEO MỖI FRAME (Tick Step)
 
 -- Tham số `newDrops` được nhận từ IO truyền vào
 updateStep :: Float -> [Drop] -> MapState -> MapState

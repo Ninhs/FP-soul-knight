@@ -16,7 +16,6 @@ executable client
     Assets
     ClientGameplay
     ClientUI
-    MapLayout
     Logic.Combat
     Logic.Movement
     Components.UI
@@ -46,7 +45,6 @@ test-suite client-ui-tests
   other-modules:
     ClientUI
     ClientGameplay
-    MapLayout
     Types
     Assets
     Animation

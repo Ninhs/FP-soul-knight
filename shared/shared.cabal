@@ -11,6 +11,7 @@ library
     Types.Item
     Types.GameState
     Protocol
+    MapLayout
   build-depends:
     base,
     aeson

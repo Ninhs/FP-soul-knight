@@ -8,6 +8,14 @@ library
   exposed-modules:
     Network
     Room
+    RoomLoop
+    Logic.AI
+    Logic.Combat
+    Logic.Control
+    Logic.GameLoop
+    Logic.MapGen
+    Logic.Movement
+    Logic.Portal
   build-depends:
     base,
     shared,
@@ -26,8 +34,11 @@ executable server
         DB
         Network
         Room
+        RoomLoop
         Logic.AI
         Logic.Combat
+        Logic.Control
+        Logic.MapGen
         Logic.Movement
         Logic.Portal
         Logic.GameLoop

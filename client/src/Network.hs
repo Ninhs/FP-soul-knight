@@ -15,6 +15,8 @@ data NetworkConnection = NetworkConnection
   , latestGameState    :: MVar GameState
   , connectionFailure :: MVar String
   , sendClientMessage  :: ClientMsg -> IO ()
+  , myPlayerId         :: Int      -- id server cấp cho mình
+  , joinedRoomCode     :: String   -- mã phòng (để hiển thị / chia sẻ)
   }
 
 connectToServer :: String -> Int -> String -> String
@@ -26,7 +28,7 @@ connectToServer host port code name = do
       WS.sendTextData conn (encode (JoinRoom code name))
       raw <- WS.receiveData conn
       case decode raw :: Maybe ServerMsg of
-        Just (RoomJoined _ gs) -> do
+        Just (RoomJoined pid joined gs) -> do
           latest <- newMVar gs
           failure <- newEmptyMVar
           let sendMessage msg = do
@@ -37,7 +39,7 @@ connectToServer host port code name = do
                     _ <- tryPutMVar failure (displayException err)
                     pure ()
                   Right () -> pure ()
-              connection = NetworkConnection gs latest failure sendMessage
+              connection = NetworkConnection gs latest failure sendMessage pid joined
           putMVar ready (Right connection)
           receiveMessages conn latest failure
         Just (RoomError err) -> putMVar ready (Left err)
@@ -67,7 +69,7 @@ receiveMessages conn latest failure = do
       raw <- WS.receiveData conn
       case decode raw :: Maybe ServerMsg of
         Just (StateUpdate gs) -> putOrSwap latest gs >> loop
-        Just (RoomJoined _ gs) -> putOrSwap latest gs >> loop
+        Just (RoomJoined _ _ gs) -> putOrSwap latest gs >> loop
         Just (RoomError err) -> do
           _ <- tryPutMVar failure err
           pure ()
