@@ -72,13 +72,11 @@ upgradeCard w kind x y =
   where
     (value, level) = case kind of
       MaxHealthUpgrade -> (playerMaxHealth w, healthUpgradeLevel w)
-      ArmorUpgrade -> (playerMaxArmor w, armorUpgradeLevel w)
       DamageUpgrade -> (playerDamage w, damageUpgradeLevel w)
       MoveSpeedUpgrade -> (playerMoveSpeed w, speedUpgradeLevel w)
     price = upgradePrice level
     statLimit = case kind of
       MaxHealthUpgrade -> 200
-      ArmorUpgrade -> 100
       DamageUpgrade -> 80
       MoveSpeedUpgrade -> 400
     canAfford = goldCoins w >= price
@@ -105,19 +103,17 @@ upgradeChoices w =
   zipWith place (rotateChoices (upgradeRefreshes w) available) locations
   where
     available =
-      [ MaxHealthUpgrade, ArmorUpgrade, DamageUpgrade, MoveSpeedUpgrade ]
+      [ MaxHealthUpgrade, DamageUpgrade, MoveSpeedUpgrade ]
     locations = [(-240, 100), (240, 100), (-240, -105), (240, -105)]
     place kind (x, y) = (kind, x, y)
 
 upgradeAsset :: UpgradeKind -> AssetId
 upgradeAsset MaxHealthUpgrade = AssetHealth
-upgradeAsset ArmorUpgrade = AssetArmor
 upgradeAsset DamageUpgrade = AssetSkill
 upgradeAsset MoveSpeedUpgrade = AssetSkill
 
 upgradeName :: UpgradeKind -> String
 upgradeName MaxHealthUpgrade = "MAX HP"
-upgradeName ArmorUpgrade = "ARMOR CAPACITY"
 upgradeName DamageUpgrade = "ATTACK DAMAGE"
 upgradeName MoveSpeedUpgrade = "MOVE SPEED"
 

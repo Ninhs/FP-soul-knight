@@ -92,7 +92,6 @@ data ClientState = ClientState
   , shopRefreshes :: Int
   , upgradeRefreshes :: Int
   , healthUpgradeLevel :: Int
-  , armorUpgradeLevel :: Int
   , damageUpgradeLevel :: Int
   , speedUpgradeLevel :: Int
   , attackEffectPos :: (Float, Float)
@@ -161,7 +160,7 @@ data ShopItemKind
   | SwiftBoots
   deriving (Eq, Show, Read, Enum, Bounded)
 
-data UpgradeKind = MaxHealthUpgrade | ArmorUpgrade | DamageUpgrade | MoveSpeedUpgrade
+data UpgradeKind = MaxHealthUpgrade | DamageUpgrade | MoveSpeedUpgrade
   deriving (Eq, Show, Read, Enum, Bounded)
 
 characterStats :: Character -> CharacterStats
@@ -260,7 +259,6 @@ initialClientState assets =
     , shopRefreshes = 0
     , upgradeRefreshes = 0
     , healthUpgradeLevel = 0
-    , armorUpgradeLevel = 0
     , damageUpgradeLevel = 0
     , speedUpgradeLevel = 0
     , attackEffectPos = (0, 0)

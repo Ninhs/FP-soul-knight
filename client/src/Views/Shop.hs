@@ -94,9 +94,9 @@ shopItemsFor w = zip selectedItems [-270, -50, 170, 390]
   where
     stock
       | shopEquipmentTab w =
-          [DamageCharm, SwiftBoots, LightArmor, HeavyArmor]
+          [DamageCharm, SwiftBoots]
       | otherwise =
-          [SmallHealthPotion, LargeHealthPotion, LightArmor, HeavyArmor]
+          [SmallHealthPotion, LargeHealthPotion]
     selectedItems = rotateItems (shopRefreshes w) stock
 
 rotateItems :: Int -> [a] -> [a]
