@@ -4,6 +4,7 @@ module Views.Upgrade
   , upgradePrice
   ) where
 
+import Data.Char (toUpper)
 import Graphics.Gloss
 import Assets
 import Types
@@ -25,10 +26,11 @@ drawUpgrade w = Pictures
   , Color Theme.cOverlay $ rectangleSolid Theme.screenWidth Theme.screenHeight
   , drawPanel 1120 680
   , Translate 0 302 $
-      drawSoul3DText 2.4 Theme.cTextGold Theme.cDarkBorder "UPGRADE STATS"
+      drawSoul3DText 2.4 Theme.cTextGold Theme.cDarkBorder
+        ("UPGRADE  " ++ map toUpper (show (selectedChar w)))
   , Translate 0 262 $
       drawTextShadow 0.13 Theme.cTextWhite Theme.cDarkBorder
-        "Local preview upgrades only. Values are not saved."
+        "Upgrades apply to the selected hero only. Change hero in CHARACTER SELECT."
   , Translate (-340) 225 $
       drawSoul3DText 1.1 Theme.cTextGold Theme.cDarkBorder
         ("AVAILABLE GOLD: " ++ show (goldCoins w))

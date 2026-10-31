@@ -55,12 +55,20 @@ drawCharacterInfo w = Translate 220 65 $ Pictures
   , drawTitleAt 0 2.0 Theme.cTextGold Theme.cDarkBorder 145 name
   , drawCenteredText 0 0.15 Theme.cTextWhite Theme.cDarkBorder 100 description
   , drawTitleAt 0 1.1 Theme.cTextMuted Theme.cDarkBorder 40 ("WEAPON: " ++ weapon)
-  , statLine 0 (-30) "HP" (characterMaxHp stats) 150 Theme.cHealthRed
-  , statLine 0 (-82) "ATK" (characterDamage stats) 36 Theme.cPrimaryGold
-  , statLine 0 (-134) "SPD" (characterMoveSpeed stats) 320 Theme.cAccentGreen
+  , statLine 0 (-30) "HP" hpValue (max 250 hpValue) Theme.cHealthRed
+  , statLine 0 (-82) "ATK" dmgValue (max 60 dmgValue) Theme.cPrimaryGold
+  , statLine 0 (-134) "SPD" spdValue (max 320 spdValue) Theme.cAccentGreen
+  , drawCenteredText 0 0.13 Theme.cTextMuted Theme.cDarkBorder (-175)
+      ("UPGRADES  HP LV " ++ show (healthUpgradeLevel w)
+        ++ "   ATK LV " ++ show (damageUpgradeLevel w)
+        ++ "   SPD LV " ++ show (speedUpgradeLevel w))
   ]
   where
     stats = characterStats (selectedChar w)
+    -- chỉ số hiện tại = chỉ số gốc + nâng cấp của riêng hero này
+    hpValue = characterMaxHp stats + fromIntegral (healthUpgradeLevel w * 20)
+    dmgValue = characterDamage stats + fromIntegral (damageUpgradeLevel w * 5)
+    spdValue = characterMoveSpeed stats + fromIntegral (speedUpgradeLevel w * 10)
     (name, description, weapon) = heroDetails (selectedChar w)
     statLine x y label value maximumValue color = Translate x y $ Pictures
       [ Translate (-190) 0 $

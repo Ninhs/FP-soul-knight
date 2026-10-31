@@ -57,6 +57,9 @@ initSchema = do
       , "ALTER TABLE players ADD COLUMN IF NOT EXISTS health_lv INT NOT NULL DEFAULT 0;"
       , "ALTER TABLE players ADD COLUMN IF NOT EXISTS damage_lv INT NOT NULL DEFAULT 0;"
       , "ALTER TABLE players ADD COLUMN IF NOT EXISTS speed_lv INT NOT NULL DEFAULT 0;"
+      , "ALTER TABLE players ADD COLUMN IF NOT EXISTS archer_health_lv INT NOT NULL DEFAULT 0;"
+      , "ALTER TABLE players ADD COLUMN IF NOT EXISTS archer_damage_lv INT NOT NULL DEFAULT 0;"
+      , "ALTER TABLE players ADD COLUMN IF NOT EXISTS archer_speed_lv INT NOT NULL DEFAULT 0;"
       , "CREATE UNIQUE INDEX IF NOT EXISTS players_name_key ON players ((LOWER(name)));"
       , "CREATE TABLE IF NOT EXISTS game_sessions ("
       , "  id SERIAL PRIMARY KEY,"
@@ -101,10 +104,16 @@ loadPlayer name = do
       \ON CONFLICT ((LOWER(name))) DO UPDATE SET updated_at = NOW() \
       \RETURNING id, role, level, exp, gold, gems, health_lv, damage_lv, speed_lv"
       (Only name) :: IO [(Int, String, Int, Int, Int, Int, Int, Int, Int)]
-    pure $ case rows of
-      ((i, role, lv, ex, gd, gm, hl, dl, sl) : _) ->
-        Just (SavedPlayer i (parseRole role) lv ex gd (Meta gm hl dl sl))
-      []                          -> Nothing
+    case rows of
+      ((i, role, lv, ex, gd, gm, hl, dl, sl) : _) -> do
+        arch <- query conn
+          "SELECT archer_health_lv, archer_damage_lv, archer_speed_lv FROM players WHERE id = ?"
+          (Only i) :: IO [(Int, Int, Int)]
+        let (ah, ad, as') = case arch of
+              (x : _) -> x
+              [] -> (0, 0, 0)
+        pure (Just (SavedPlayer i (parseRole role) lv ex gd (Meta gm hl dl sl ah ad as')))
+      [] -> pure Nothing
   pure (r >>= id)
 
 parseRole :: String -> Role
@@ -203,6 +212,8 @@ saveMeta :: Int -> Meta -> IO ()
 saveMeta dbId m = do
   _ <- safely "saveMeta" $ withConn $ \conn ->
     execute conn
-      "UPDATE players SET gems = ?, health_lv = ?, damage_lv = ?, speed_lv = ?, updated_at = NOW() WHERE id = ?"
-      (metaGems m, metaHpLv m, metaDmgLv m, metaSpeedLv m, dbId)
+      "UPDATE players SET gems = ?, health_lv = ?, damage_lv = ?, speed_lv = ?, \
+      \archer_health_lv = ?, archer_damage_lv = ?, archer_speed_lv = ?, updated_at = NOW() WHERE id = ?"
+      (metaGems m, metaHpLv m, metaDmgLv m, metaSpeedLv m,
+       metaArcherHpLv m, metaArcherDmgLv m, metaArcherSpeedLv m, dbId)
   pure ()

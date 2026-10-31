@@ -22,7 +22,7 @@ import Graphics.Gloss.Interface.IO.Game
 import Animation (AnimKind(..), AnimState(..), SpriteSet(..), animFinished, setAnimKind, startAnim, stepAnim)
 import Sprites (framesOf, playerSet)
 import Assets (loadAssets)
-import ClientUI (UiAction(..), UiResult(..), reduceUi, startLocalRun, toEnemyData)
+import ClientUI (UiAction(..), UiResult(..), reduceUi, startLocalRun, toEnemyData, stateMeta, loadMetaInto)
 import Components.UI (insideRect)
 import qualified MapLayout as Map
 import qualified StageLayout as Stage
@@ -121,7 +121,7 @@ syncEconomy net before after = do
     _ -> pure after
 
 metaOf :: ClientState -> GS.Meta
-metaOf s = GS.Meta (gems s) (healthUpgradeLevel s) (damageUpgradeLevel s) (speedUpgradeLevel s)
+metaOf = stateMeta
 
 handleInputRaw :: Net -> InputRefs -> Event -> ClientState -> IO ClientState
 handleInputRaw net inputRefs event state = do
@@ -162,7 +162,7 @@ lobbyClick net position state
               let savedProfile = lookup (myPlayerId conn) (GS.profiles (initialGameState conn))
               writeIORef (netConn net) (Just conn)
               writeIORef (netSent net) Nothing
-              pure (Just state
+              pure (Just (maybe id (loadMetaInto . GS.profileMeta) savedProfile state
                 { roomCode = joinedRoomCode conn
                 , roomInput = ""
                 , roomInputActive = False
@@ -170,11 +170,7 @@ lobbyClick net position state
                 , isMultiplayer = True
                 , onlinePlayerId = Just (myPlayerId conn)
                 , sharedState = initialGameState conn
-                , gems = maybe (gems state) (GS.metaGems . GS.profileMeta) savedProfile
-                , healthUpgradeLevel = maybe (healthUpgradeLevel state) (GS.metaHpLv . GS.profileMeta) savedProfile
-                , damageUpgradeLevel = maybe (damageUpgradeLevel state) (GS.metaDmgLv . GS.profileMeta) savedProfile
-                , speedUpgradeLevel = maybe (speedUpgradeLevel state) (GS.metaSpeedLv . GS.profileMeta) savedProfile
-                , statusText = "Joined room " ++ joinedRoomCode conn })
+                , statusText = "Joined room " ++ joinedRoomCode conn }))
   -- Nút giữa: chủ phòng = START RUN (khi mọi người đã sẵn sàng), người khác = READY UP
   | insideRect position (0, -270) 260 52 = do
       current <- readIORef (netConn net)

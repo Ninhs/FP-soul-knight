@@ -103,6 +103,7 @@ data ClientState = ClientState
   , healthUpgradeLevel :: Int
   , damageUpgradeLevel :: Int
   , speedUpgradeLevel :: Int
+  , otherHeroLevels :: (Int, Int, Int)   -- cấp nâng cấp của hero đang KHÔNG được chọn
   , attackEffectPos :: (Float, Float)
   , attackEffectTimer :: Float
   , damageTexts :: [DamageText]   -- số sát thương bay lên khi đánh trúng quái
@@ -187,8 +188,8 @@ data UpgradeKind = MaxHealthUpgrade | DamageUpgrade | MoveSpeedUpgrade
   deriving (Eq, Show, Read, Enum, Bounded)
 
 characterStats :: Character -> CharacterStats
-characterStats Swordsman = CharacterStats 120 34 15 220
-characterStats Archer = CharacterStats 90 30 5 250
+characterStats Swordsman = CharacterStats 150 25 15 157.5
+characterStats Archer = CharacterStats 100 18 5 175
 characterStats Knight = CharacterStats 150 25 25 190
 characterStats Bomber = CharacterStats 100 38 8 210
 characterStats Mage = CharacterStats 85 42 3 230
@@ -290,6 +291,7 @@ initialClientState assets =
     , healthUpgradeLevel = 0
     , damageUpgradeLevel = 0
     , speedUpgradeLevel = 0
+    , otherHeroLevels = (0, 0, 0)
     , attackEffectPos = (0, 0)
     , attackEffectTimer = 0
     , damageTexts = []

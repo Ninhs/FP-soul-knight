@@ -242,6 +242,8 @@ updateMeta room pid m0 = do
   let clampTo hi v = max 0 (min hi v)
       m = Meta (clampTo 99999 (metaGems m0)) (clampTo 50 (metaHpLv m0))
                (clampTo 50 (metaDmgLv m0)) (clampTo 50 (metaSpeedLv m0))
+               (clampTo 50 (metaArcherHpLv m0)) (clampTo 50 (metaArcherDmgLv m0))
+               (clampTo 50 (metaArcherSpeedLv m0))
   atomically $ modifyTVar' (roomState room) $ \gs ->
     gs { profiles = [ (i, if i == pid then p { profileMeta = m } else p) | (i, p) <- profiles gs ] }
   ids <- readTVarIO (roomDbIds room)

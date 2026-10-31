@@ -3,6 +3,8 @@ module ClientUI
   , UiResult(..)
   , reduceUi
   , startLocalRun
+  , stateMeta
+  , loadMetaInto
   , toEnemyData
   , chestRewardFor
   , worldScale
@@ -327,9 +329,40 @@ playAgain state
       state { appView = LobbyView, isReady = False, statusText = "Back in the lobby." }
   | otherwise = startLocalRun state
 
+-- Cấp nâng cấp riêng cho từng hero: các trường *UpgradeLevel là của hero đang chọn,
+-- otherHeroLevels là của hero còn lại. Đổi hero thì hoán đổi hai bộ cấp.
+roleOf :: Character -> GS.Role
+roleOf Archer = GS.Archer
+roleOf _ = GS.Warrior
+
+activeLevels :: ClientState -> (Int, Int, Int)
+activeLevels s = (healthUpgradeLevel s, damageUpgradeLevel s, speedUpgradeLevel s)
+
+stateMeta :: ClientState -> GS.Meta
+stateMeta s =
+  let me = roleOf (selectedChar s)
+      other = if me == GS.Archer then GS.Warrior else GS.Archer
+      base = GS.Meta (gems s) 0 0 0 0 0 0
+  in GS.setMetaLevels other (otherHeroLevels s) (GS.setMetaLevels me (activeLevels s) base)
+
+loadMetaInto :: GS.Meta -> ClientState -> ClientState
+loadMetaInto m s =
+  let me = roleOf (selectedChar s)
+      other = if me == GS.Archer then GS.Warrior else GS.Archer
+      (h, d, sp) = GS.metaLevels me m
+  in s { gems = GS.metaGems m
+       , healthUpgradeLevel = h, damageUpgradeLevel = d, speedUpgradeLevel = sp
+       , otherHeroLevels = GS.metaLevels other m }
+
 selectCharacter :: Character -> ClientState -> ClientState
-selectCharacter character state =
-  let stats = characterStats character
+selectCharacter character state0 =
+  let state = if roleOf character == roleOf (selectedChar state0)
+                then state0
+                else state0 { healthUpgradeLevel = (\(a,_,_) -> a) (otherHeroLevels state0)
+                            , damageUpgradeLevel = (\(_,b,_) -> b) (otherHeroLevels state0)
+                            , speedUpgradeLevel = (\(_,_,c) -> c) (otherHeroLevels state0)
+                            , otherHeroLevels = activeLevels state0 }
+      stats = characterStats character
       newMaxHealth = characterMaxHp stats + fromIntegral (healthUpgradeLevel state * 20)
   in state
     { selectedChar = character
@@ -341,8 +374,8 @@ selectCharacter character state =
 
 startLocalRun :: ClientState -> ClientState
 startLocalRun state =
-  let role = if selectedChar state == Archer then GS.Archer else GS.Warrior
-      meta = GS.Meta (gems state) (healthUpgradeLevel state) (damageUpgradeLevel state) (speedUpgradeLevel state)
+  let role = roleOf (selectedChar state)
+      meta = stateMeta state
       profile = GS.PlayerProfile "Player" role (playerLevel state) (playerExperience state)
                   (goldCoins state) False meta
       -- offline dùng đúng bản đồ + luật của chế độ online (phòng 1: cửa mở, phòng 2: quái, phòng 3: boss)
