@@ -8,7 +8,7 @@ import Data.Time (getCurrentTime)
 import qualified Data.Map as M
 import GHC.Clock (getMonotonicTime)
 
-import DB (RunPlayer(..), saveRun)
+import DB (RunPlayer(..), saveProgress, saveRun)
 import Logic.Control (Cooldowns, applyInputs)
 import Logic.GameLoop (generateDropsIO, updateStep)
 import Logic.Portal (roomOutcome)
@@ -23,6 +23,19 @@ frameMicros = 1000000 `div` 60
 broadcastEvery :: Int
 broadcastEvery = 2
 
+autosaveEvery :: Int
+autosaveEvery = 300
+
+autosave :: Room -> IO ()
+autosave room = do
+  ids <- readTVarIO (roomDbIds room)
+  mapM_ (\pid -> do
+           pending <- takePending room pid
+           case pending of
+             Just (dbId, gold, ex) -> void (forkIO (saveProgress dbId gold ex))
+             Nothing -> pure ())
+        (M.keys ids)
+
 -- Chạy cho tới khi phòng bị xoá khỏi `rooms` (hết người).
 roomLoop :: Rooms -> String -> Room -> IO ()
 roomLoop rooms code room = getMonotonicTime >>= go (0 :: Int) M.empty
@@ -36,6 +49,8 @@ roomLoop rooms code room = getMonotonicTime >>= go (0 :: Int) M.empty
         cds' <- case phase gs of
           Playing ms -> tick dt cds ms
           _          -> pure cds
+        -- tự lưu vàng/EXP nhặt được mỗi ~5 giây (phòng khi người chơi mất kết nối đột ngột)
+        when (n > 0 && n `mod` autosaveEvery == 0) (autosave room)
         when (n `mod` broadcastEvery == 0) $
           readTVarIO (roomState room) >>= broadcast room . StateUpdate
         threadDelay frameMicros

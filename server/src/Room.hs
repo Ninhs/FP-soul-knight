@@ -10,7 +10,7 @@ import Data.Map (Map)
 import qualified Network.WebSockets as WS
 import System.Random (randomRIO)
 
-import DB (SavedPlayer(..))
+import DB (SavedPlayer(..), addExp)
 import Logic.Control (PlayerInput)
 import Logic.MapGen (newMapState)
 import Protocol
@@ -132,7 +132,15 @@ takePending room pid = atomically $ do
       case [p | p <- players ms, playerId p == pid] of
         (p : _) | pendingGold p > 0 || pendingExp p > 0 -> do
           let clear q = if playerId q == pid then q { pendingGold = 0, pendingExp = 0 } else q
-          writeTVar (roomState room) gs { phase = Playing ms { players = map clear (players ms) } }
+              -- phần đã lưu được cộng vào hồ sơ trong phòng để HUD không bị tụt số
+              bump (i, pr)
+                | i == pid =
+                    let (lv, ex) = addExp (profileLv pr) (profileExp pr) (pendingExp p)
+                    in (i, pr { profileLv = lv, profileExp = ex, profileGold = profileGold pr + pendingGold p })
+                | otherwise = (i, pr)
+          writeTVar (roomState room) gs
+            { phase = Playing ms { players = map clear (players ms) }
+            , profiles = map bump (profiles gs) }
           pure (Just (dbId, pendingGold p, pendingExp p))
         _ -> pure Nothing
     _ -> pure Nothing
