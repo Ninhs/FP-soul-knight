@@ -6,7 +6,8 @@ import Control.Concurrent (forkIO)
 import Control.Exception (finally, try, SomeException)
 import Control.Concurrent.STM (readTVarIO)
 import Data.Aeson (encode, decode)
-import Data.Char (toUpper)
+import Data.Char (toLower, toUpper)
+import Data.List (isInfixOf)
 import System.Environment (lookupEnv)
 import Text.Read (readMaybe)
 
@@ -23,13 +24,30 @@ runServer rooms = do
   WS.runServer "0.0.0.0" port (app rooms)
 
 app :: Rooms -> WS.ServerApp
-app rooms pending = do
-  conn <- WS.acceptRequest pending
-  WS.withPingThread conn 30 (pure ()) $ do
-    result <- try (handleClient rooms conn) :: IO (Either SomeException ())
-    case result of
-      Left e  -> putStrLn ("Client loi/mat ket noi: " ++ show e)
-      Right _ -> pure ()
+app rooms pending
+  | isWebSocketUpgrade pending = do
+      conn <- WS.acceptRequest pending
+      WS.withPingThread conn 30 (pure ()) $ do
+        result <- try (handleClient rooms conn) :: IO (Either SomeException ())
+        case result of
+          Left e  -> putStrLn ("Client loi/mat ket noi: " ++ show e)
+          Right _ -> pure ()
+  -- Yêu cầu HTTP thường (UptimeRobot, trình duyệt): trả 200 để Render coi là còn sống
+  | otherwise =
+      WS.rejectRequestWith pending WS.defaultRejectRequest
+        { WS.rejectCode = 200
+        , WS.rejectMessage = "OK"
+        , WS.rejectBody = "FP Soul Knight server is running"
+        }
+
+-- Có header "Upgrade: websocket" hay không (so sánh không phân biệt hoa thường).
+isWebSocketUpgrade :: WS.PendingConnection -> Bool
+isWebSocketUpgrade pending =
+  any (\(k, v) -> low k == "\"upgrade\"" && "websocket" `isInfixOf` low v)
+      (WS.requestHeaders (WS.pendingRequest pending))
+  where
+    low :: Show a => a -> String
+    low = map toLower . show
 
 -- Tin nhắn đầu tiên phải là JoinRoom. Mã phòng rỗng = tạo phòng mới.
 handleClient :: Rooms -> WS.Connection -> IO ()

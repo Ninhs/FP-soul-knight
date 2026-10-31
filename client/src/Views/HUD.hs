@@ -3,11 +3,12 @@ module Views.HUD
   , drawGameHUD
   , drawTutorialGuide
   ) where
-import MapLayout (Link(..), RoomId(..), linkDoor, openLinks, roomAt, roomRect)
+import MapLayout (Link(..), Rect(..), RoomId(..), linkDoor, openLinks, permanentWalls, roomAt, roomRect)
 import Graphics.Gloss
 import Animation (AnimState, currentFrame, animKind, AnimKind(..), SpriteSet(..))
 import Assets
 import qualified MapLayout as Map
+import qualified Types.GameState as GS
 import Sprites (framesOf, playerSet)
 import Types
 import Components.UI
@@ -26,6 +27,8 @@ import Components.UI
   , drawCoinCounter
   , drawInfoPanel
   , insideRect
+  , drawCenteredText
+  , drawTitleAt
   )
 import qualified Theme
 
@@ -35,6 +38,7 @@ drawGameHUD w = Pictures
       [ drawAssetAt w (mapAsset (selectedMapSize w)) (0, 0)
           (fromIntegral mapColumns * Theme.dungeonTileSize,
            fromIntegral mapRows * Theme.dungeonTileSize) Stretch
+      , drawDrops w 
       , drawWalls w
       , drawClosedDoors w
       , drawChest w
@@ -163,27 +167,17 @@ drawFixedHud :: World -> Picture
 drawFixedHud w = Pictures
   [ Translate (-455) 310 $ drawPanel 370 104
   , drawAssetSlot w SlotHudAvatar
-  , Translate (-400) 334 $
+  , Translate (-475) 334 $
       drawSoul3DText 1.0 Theme.cTextWhite Theme.cDarkBorder
         (characterName (selectedChar w) ++ "  LV " ++ show (playerLevel w))
   , drawAssetSlot w SlotHudHealth
-  , Translate (-350) 304 $
-      drawHealthBar 250 16 (playerHealth w) (playerMaxHealth w)
-  , drawAssetSlot w SlotHudArmor
-  , Translate (-350) 279 $
-      drawArmorBar 250 10 (playerArmor w) (playerMaxArmor w)
-  , Translate (-350) 258 $
-      drawEnergyBar 250 8 (playerEnergy w) (playerMaxEnergy w)
-  , Translate (-455) 236 $
-      drawTextShadow 0.11 Theme.cAccentBlue Theme.cDarkBorder
-        ("EXP " ++ show (playerExperience w) ++ " / " ++ show (playerLevel w * 100))
+  , Translate (-384) 304 $
+      drawHealthBar 200 16 (playerHealth w) (playerMaxHealth w)
+  , drawCenteredText (-384) 0.11 Theme.cAccentBlue Theme.cDarkBorder 268
+      ("EXP " ++ show (playerExperience w) ++ " / " ++ show (playerLevel w * 100))
   , Translate 430 320 $ drawPanel 390 86
   , drawAssetSlot w SlotHudCoin
   , Translate 345 320 $ drawCoinCounter (goldCoins w)
-  , Translate 345 291 $
-      drawSoul3DText 1.0 Theme.cTextWhite Theme.cDarkBorder
-        "LOCAL DEMO"
-  , drawMinimap w
   , Translate 560 320 $ drawSoulButton 130 42 "PAUSE"
       (insideRect (mousePos w) (560, 320) 130 42)
   , Translate 560 265 $ drawSoulButton 130 42 "SHOP"
@@ -191,68 +185,73 @@ drawFixedHud w = Pictures
   , Translate 560 210 $ drawSoulButton 130 42 "UPGRADE"
       (insideRect (mousePos w) (560, 210) 130 42)
   , if inventoryVisible w then drawInventoryBar w else Blank
-  , Translate 440 (-285) $
-      drawTextShadow 0.10 Theme.cTextMuted Theme.cDarkBorder "SKILLS LOCKED"
-  , Translate (-455) (-322) $
-      drawTextShadow 0.13 Theme.cTextWhite Theme.cDarkBorder
-        "WASD MOVE   /   LEFT CLICK AIM + ATTACK   /   E INTERACT"
   , if currentRoom w == Just Map.BossRoom && bossHealth w > 0
       then Translate 0 325 $
         drawBossHPBar "BOSS" (bossHealth w) (bossMaxHealth w)
       else Blank
   ]
+rectToTuple :: Rect -> (Float, Float, Float, Float)
+rectToTuple r = (rectX r, rectY r, rectWidth r, rectHeight r)
 
 drawMinimap :: World -> Picture
 drawMinimap w = Translate 390 165 $ Pictures
   [ drawPanel 190 140
   , drawAssetAt w AssetMinimapFrame (0, 0) (190, 140) Contain
-  , Translate 0 48 $
-      drawSoul3DText 0.9 Theme.cTextGold Theme.cDarkBorder "ROOM RADAR"
-  , Translate 0 1 $ Pictures
-      [ Color (makeColor 0.025 0.055 0.075 1) $ rectangleSolid 130 78
-      , Color (makeColor 0.16 0.31 0.38 1) $ rectangleWire 130 78
-      , Color (makeColor 0.13 0.23 0.27 1) $ line [(-65, 0), (65, 0)]
-      , Color (makeColor 0.13 0.23 0.27 1) $ line [(0, -39), (0, 39)]
-      , Pictures (map drawEnemyMarker (filter enemyIsAlive (enemies w)))
-      , drawPlayerMarker
-      ]
-  , Translate 0 (-51) $ Pictures
-      [ Translate (-37) 0 $
-          drawTextShadow 0.09 Theme.cAccentBlue Theme.cDarkBorder "YOU"
-      , Translate 31 0 $
-          drawTextShadow 0.09 Theme.cAccentRed Theme.cDarkBorder "ENEMY"
-      ]
+  , Translate 0 1 $ Pictures $
+      [ Color (makeColor 0.025 0.055 0.075 1) $ rectangleSolid radarW radarH ]
+      ++ map drawRoomTint [StartRoom, NormalA, NormalB, BossRoom]
+      ++ map (drawWall . rectToTuple) (permanentWalls size)
+      ++ map drawClosedDoor closedLinks
+      ++ map drawEnemyMarker (filter enemyIsAlive (enemies w))
+      ++ [drawPlayerMarker]
   ]
   where
+    radarW = 130
+    radarH = 78
+    size = selectedMapSize w
+    (cols, rows) = mapDimensions size
+    mapW = fromIntegral cols * Theme.dungeonTileSize
+    mapH = fromIntegral rows * Theme.dungeonTileSize
+    current = roomAt size (playerPos w)
+    closedLinks =
+      [ l | l <- [LinkBLtoTL, LinkTLtoTR, LinkTRtoBR]
+          , l `notElem` openLinks (clearedRooms w) ]
+
+    -- Pixel (gốc ở tâm map) -> tọa độ trong khung radar (gốc ở tâm khung)
+    toRadar (x, y) = (x / mapW * radarW, y / mapH * radarH)
+
+    -- Vẽ một hình chữ nhật (x, y, rộng, cao) của map lên radar
+    rectPic (x, y, rw, rh) col =
+      let (cx, cy) = toRadar (x + rw / 2, y + rh / 2)
+          sw = rw / mapW * radarW
+          sh = rh / mapH * radarH
+      in Translate cx cy $ Color col $ rectangleSolid (max 1 sw) (max 1 sh)
+
+    drawRoomTint r = rectPic (rectToTuple (roomRect size r)) (roomColor r)
+
+    drawWall rect = rectPic rect (makeColor 0.75 0.75 0.75 1)
+
+    drawClosedDoor l = rectPic (rectToTuple (linkDoor size l)) Theme.cAccentRed
+
+    roomColor r
+      | current == Just r = makeColor 0.25 0.55 0.65 1
+      | r `elem` clearedRooms w = makeColor 0.15 0.4 0.22 1
+      | r == BossRoom = makeColor 0.4 0.12 0.12 1
+      | otherwise = makeColor 0.13 0.2 0.25 1
+
     drawPlayerMarker =
-      let (x, y) = radarPosition (playerPos w)
+      let (x, y) = toRadar (playerPos w)
       in Translate x y $ Pictures
         [ Color Theme.cTextWhite $ circleSolid 5
         , Color Theme.cAccentBlue $ circleSolid 3
         ]
-    drawEnemyMarker enemy =
-      let (x, y) = radarPosition (enemyPos enemy)
-      in Translate x y $ Color Theme.cAccentRed $ circleSolid 4
-    radarPosition (x, y) =
-      ( clamp (-62) 62 ((x + 360) / 720 * 124 - 62)
-      , clamp (-36) 36 ((y + 260) / 520 * 72 - 36)
-      )
-    clamp lower upper = max lower . min upper
 
-drawStatusPanel :: World -> Picture
-drawStatusPanel w = Pictures
-  [ drawPanel 330 90
-  , Translate 0 24 $
-      drawSoul3DText 1.0 Theme.cTextWhite Theme.cDarkBorder
-        (characterWeapon (selectedChar w) ++ "  DMG "
-          ++ show (round (playerDamage w) :: Int))
-  , Translate 0 (-12) $
-      drawTextShadow 0.12 Theme.cTextMuted Theme.cDarkBorder
-        ("MOVE SPEED " ++ show (round (playerMoveSpeed w) :: Int))
-  , Translate 0 (-34) $
-      drawTextShadow 0.11 Theme.cAccentBlue Theme.cDarkBorder
-        (statusText w)
-  ]
+    drawEnemyMarker enemy =
+      let (x, y) = toRadar (enemyPos enemy)
+          isBoss = enemyKind enemy == HighDamageEnemy
+          radius = if isBoss then 6 else 4
+          col = if isBoss then Theme.cTextGold else Theme.cAccentRed
+      in Translate x y $ Color col $ circleSolid radius
 
 drawInventoryBar :: World -> Picture
 drawInventoryBar w = Translate 25 (-255) $ Pictures
@@ -263,9 +262,7 @@ drawInventoryBar w = Translate 25 (-255) $ Pictures
       [ drawInventorySlot w index kind count x
       | (index, kind, x) <-
           [ (1, SmallHealthPotion, -132)
-          , (2, LightArmor, -44)
-          , (3, LargeHealthPotion, 44)
-          , (4, HeavyArmor, 132)
+          , (2, LargeHealthPotion, 44)
           ]
       , let count = inventoryCount kind (shopInventory w)
       ]
@@ -380,3 +377,17 @@ drawTutorialPanel w = Pictures
       , Translate 20 0 $
           drawTextShadow 0.13 Theme.cTextWhite Theme.cDarkBorder description
       ]
+
+drawDrops :: World -> Picture
+drawDrops w = Pictures
+  [ Translate (x * 35) (y * 35) $ Pictures
+      [ Color black $ circleSolid 9
+      , Color (dropColor (GS.dType d)) $ circleSolid 6
+      ]
+  | d <- GS.drops (localMapState w)
+  , let (x, y) = GS.dPosition d
+  ]
+  where
+    dropColor (GS.GoldDrop _) = yellow
+    dropColor (GS.ExpDrop _)  = green
+    dropColor (GS.HealDrop _) = rose

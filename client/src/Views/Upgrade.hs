@@ -23,16 +23,16 @@ drawUpgrade :: World -> Picture
 drawUpgrade w = Pictures
   [ menuBackground w
   , Color Theme.cOverlay $ rectangleSolid Theme.screenWidth Theme.screenHeight
-  , drawPanel 1120 630
-  , Translate 0 290 $
+  , drawPanel 1120 680
+  , Translate 0 302 $
       drawSoul3DText 2.4 Theme.cTextGold Theme.cDarkBorder "UPGRADE STATS"
-  , Translate 0 250 $
+  , Translate 0 262 $
       drawTextShadow 0.13 Theme.cTextWhite Theme.cDarkBorder
         "Local preview upgrades only. Values are not saved."
-  , Translate (-340) 195 $
+  , Translate (-340) 225 $
       drawSoul3DText 1.1 Theme.cTextGold Theme.cDarkBorder
         ("AVAILABLE GOLD: " ++ show (goldCoins w))
-  , Translate 340 195 $
+  , Translate 340 225 $
       drawSoul3DText 1.1 Theme.cTextWhite Theme.cDarkBorder
         ("GEMS: " ++ show (gems w))
   , Pictures
@@ -72,13 +72,11 @@ upgradeCard w kind x y =
   where
     (value, level) = case kind of
       MaxHealthUpgrade -> (playerMaxHealth w, healthUpgradeLevel w)
-      ArmorUpgrade -> (playerMaxArmor w, armorUpgradeLevel w)
       DamageUpgrade -> (playerDamage w, damageUpgradeLevel w)
       MoveSpeedUpgrade -> (playerMoveSpeed w, speedUpgradeLevel w)
     price = upgradePrice level
     statLimit = case kind of
       MaxHealthUpgrade -> 200
-      ArmorUpgrade -> 100
       DamageUpgrade -> 80
       MoveSpeedUpgrade -> 400
     canAfford = goldCoins w >= price
@@ -105,19 +103,17 @@ upgradeChoices w =
   zipWith place (rotateChoices (upgradeRefreshes w) available) locations
   where
     available =
-      [ MaxHealthUpgrade, ArmorUpgrade, DamageUpgrade, MoveSpeedUpgrade ]
-    locations = [(-240, 100), (240, 100), (-240, -105), (240, -105)]
+      [ MaxHealthUpgrade, DamageUpgrade, MoveSpeedUpgrade ]
+    locations = [(-240, 100), (240, 100), (0, -105)]
     place kind (x, y) = (kind, x, y)
 
 upgradeAsset :: UpgradeKind -> AssetId
 upgradeAsset MaxHealthUpgrade = AssetHealth
-upgradeAsset ArmorUpgrade = AssetArmor
 upgradeAsset DamageUpgrade = AssetSkill
 upgradeAsset MoveSpeedUpgrade = AssetSkill
 
 upgradeName :: UpgradeKind -> String
 upgradeName MaxHealthUpgrade = "MAX HP"
-upgradeName ArmorUpgrade = "ARMOR CAPACITY"
 upgradeName DamageUpgrade = "ATTACK DAMAGE"
 upgradeName MoveSpeedUpgrade = "MOVE SPEED"
 

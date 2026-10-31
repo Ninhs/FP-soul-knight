@@ -3,7 +3,7 @@ module ClientGameplay
   , movePreviewPlayer
   ) where
 
-import Data.List (find)
+import Data.List (find, partition)
 
 import Animation
 import Assets (GameAssets)
@@ -69,6 +69,13 @@ stepLocalGameplay deltaTime direction attackPressed state
             [] -> attackedPlayer
             updated : _ -> updated
           (livingMonsters, deadMonsters) = Combat.splitDeadMonsters monstersAfterHits
+          newDrops = concatMap monsterDrops deadMonsters
+          allDrops = GS.drops currentMap ++ newDrops
+          (picked, leftDrops) = partition (isPicked finalPlayer) allDrops
+          goldGain = sum [ g | d <- picked, GS.GoldDrop g <- [GS.dType d] ]
+          expGain  = sum [ e | d <- picked, GS.ExpDrop e  <- [GS.dType d] ]
+          (nextLevel, nextExp) =
+            levelUp (playerLevel state) (playerExperience state + expGain)
           bossDied = any ((== 900) . GS.monsterId) deadMonsters
           nextBossDefeated = bossDefeated state || bossDied
           newlyCleared =
@@ -85,6 +92,7 @@ stepLocalGameplay deltaTime direction attackPressed state
             { GS.players = [finalPlayer]
             , GS.monsters = livingMonsters
             , GS.bullets = remainingBullets
+            , GS.drops = leftDrops
             }
           playerAlive = Combat.isPlayerAlive finalPlayer
           nextView
@@ -132,6 +140,9 @@ stepLocalGameplay deltaTime direction attackPressed state
           , clearedRooms = nextClearedRooms
           , bossDefeated = nextBossDefeated
           , playerHealth = fromIntegral (GS.hp (GS.stats finalPlayer))
+          , goldCoins = goldCoins state + goldGain
+          , playerLevel = nextLevel
+          , playerExperience = nextExp
           , enemies = nextEnemies
           , enemyCorpses = nextCorpses
           , projectiles =
@@ -328,3 +339,30 @@ movePreviewPlayer deltaTime blocked (dx, dy) position speed =
   Movement.moveWithAxisCollision blocked position delta
   where
     delta = Movement.stepFromInput (dx, dy) speed (max 0 deltaTime)
+
+-- Phần thưởng theo loại quái: (vàng, kinh nghiệm)
+monsterReward :: GS.Monster -> (Int, Int)
+monsterReward m = case GS.kind m of
+  GS.Boss                -> (200, 300)
+  GS.Regular GS.Ranged _ -> (15, 25)
+  GS.Regular GS.Melee _  -> (10, 20)
+
+-- Quái chết thì rơi một cục vàng và một cục kinh nghiệm tại chỗ
+monsterDrops :: GS.Monster -> [GS.Drop]
+monsterDrops m =
+  let (gold, exp') = monsterReward m
+      p = GS.mPosition m
+  in [GS.Drop p (GS.GoldDrop gold), GS.Drop p (GS.ExpDrop exp')]
+
+-- Người chơi nhặt khi ở đủ gần (đơn vị world, 1 ≈ 35 px)
+pickupRadius :: Float
+pickupRadius = 1.0
+
+isPicked :: GS.Player -> GS.Drop -> Bool
+isPicked p d = Movement.distance (GS.position p) (GS.dPosition d) <= pickupRadius
+
+-- Lên cấp khi đủ kinh nghiệm: ngưỡng = cấp × 100 (khớp HUD)
+levelUp :: Int -> Int -> (Int, Int)
+levelUp lv xp
+  | xp >= lv * 100 = levelUp (lv + 1) (xp - lv * 100)
+  | otherwise      = (lv, xp)

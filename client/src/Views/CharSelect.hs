@@ -30,8 +30,6 @@ drawCharSelect w = Pictures
 drawSelectedCharacter :: World -> Picture
 drawSelectedCharacter w = Pictures
   [ drawAssetAt w (characterAsset (selectedChar w)) (-300, 105) (230, 210) Contain
-  , Translate (-375) (-150) $
-      drawSoul3DText 1.0 Theme.cTextMuted Theme.cDarkBorder "HERO PREVIEW SLOT"
   , characterSlot w Swordsman (-375)
   , characterSlot w Archer (-225)
   ]
@@ -54,17 +52,12 @@ characterLabel _ = "HERO"
 drawCharacterInfo :: World -> Picture
 drawCharacterInfo w = Translate 220 65 $ Pictures
   [ drawPanel 510 410
-  , Translate 0 145 $
-      drawSoul3DText 2.0 Theme.cTextGold Theme.cDarkBorder name
-  , Translate 0 100 $
-      drawTextShadow 0.15 Theme.cTextWhite Theme.cDarkBorder description
-  , Translate 0 40 $
-      drawSoul3DText 1.1 Theme.cTextMuted Theme.cDarkBorder
-        ("WEAPON: " ++ weapon)
+  , drawTitleAt 0 2.0 Theme.cTextGold Theme.cDarkBorder 145 name
+  , drawCenteredText 0 0.15 Theme.cTextWhite Theme.cDarkBorder 100 description
+  , drawTitleAt 0 1.1 Theme.cTextMuted Theme.cDarkBorder 40 ("WEAPON: " ++ weapon)
   , statLine 0 (-30) "HP" (characterMaxHp stats) 150 Theme.cHealthRed
   , statLine 0 (-82) "ATK" (characterDamage stats) 36 Theme.cPrimaryGold
-  , statLine 0 (-134) "DEF" (characterDefense stats) 25 Theme.cArmorBlue
-  , statLine 0 (-186) "SPD" (characterMoveSpeed stats) 320 Theme.cAccentGreen
+  , statLine 0 (-134) "SPD" (characterMoveSpeed stats) 320 Theme.cAccentGreen
   ]
   where
     stats = characterStats (selectedChar w)
