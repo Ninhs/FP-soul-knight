@@ -45,10 +45,7 @@ roomLoop rooms code room = getMonotonicTime >>= go (0 :: Int) M.empty
       when present $ do
         now <- getMonotonicTime
         let dt = realToFrac (max 0.001 (min 0.05 (now - tPrev))) :: Float
-        gs <- readTVarIO (roomState room)
-        cds' <- case phase gs of
-          Playing ms -> tick dt cds ms
-          _          -> pure cds
+        cds' <- tick dt cds
         -- tự lưu vàng/EXP nhặt được mỗi ~5 giây (phòng khi người chơi mất kết nối đột ngột)
         when (n > 0 && n `mod` autosaveEvery == 0) (autosave room)
         when (n `mod` broadcastEvery == 0) $
@@ -56,26 +53,36 @@ roomLoop rooms code room = getMonotonicTime >>= go (0 :: Int) M.empty
         threadDelay frameMicros
         go (n + 1) cds' now
 
-    tick :: Float -> Cooldowns -> MapState -> IO Cooldowns
-    tick dt cds ms0 = do
+    -- Toàn bộ bước cập nhật chạy trong MỘT giao dịch STM trên trạng thái mới nhất,
+    -- để không ghi đè thay đổi của thread khác (nhặt rương, mua đồ, tự lưu...).
+    tick :: Float -> Cooldowns -> IO Cooldowns
+    tick dt cds = do
       inputs <- readTVarIO (roomInputs room)
-      let (ms1, cds') = applyInputs dt inputs cds ms0
-          ms2 = updateStep dt [] ms1
-          aliveIds = map monsterId (monsters ms2)
-          killed = [m | m <- monsters ms1, monsterId m `notElem` aliveIds]
+      (cds', killed, finished) <- atomically $ do
+        g <- readTVar (roomState room)
+        case phase g of
+          Playing ms0 -> do
+            let (ms1, cdsNext) = applyInputs dt inputs cds ms0
+                ms2 = updateStep dt [] ms1
+                aliveIds = map monsterId (monsters ms2)
+                dead = [m | m <- monsters ms1, monsterId m `notElem` aliveIds]
+                next = maybe (Playing ms2) RoomResult (roomOutcome ms2)
+            writeTVar (roomState room) g { phase = next }
+            pure (cdsNext, dead, case next of
+                                   RoomResult r -> Just (r, ms2)
+                                   _            -> Nothing)
+          _ -> pure (cds, [], Nothing)
+      -- quái chết rớt đồ (cần random nên làm ngoài STM)
       newDrops <- concat <$> mapM generateDropsIO killed
-      let ms3 = ms2 { drops = drops ms2 ++ newDrops }
-          next = maybe (Playing ms3) RoomResult (roomOutcome ms3)
-      -- chỉ ghi phase; giữ nguyên profiles do thread khác có thể vừa sửa
-      atomically $ modifyTVar' (roomState room) $ \g -> case phase g of
-        Playing _ -> g { phase = next }
-        _         -> g
+      when (not (null newDrops)) $
+        atomically $ modifyTVar' (roomState room) $ \g -> case phase g of
+          Playing ms -> g { phase = Playing ms { drops = drops ms ++ newDrops } }
+          _          -> g
       -- Ván vừa kết thúc (chỉ xảy ra đúng 1 lần): lưu kết quả vào DB ở thread riêng
-      case next of
-        RoomResult r -> void (forkIO (persistRun code room r ms3))
-        _            -> pure ()
+      case finished of
+        Just (r, ms) -> void (forkIO (persistRun code room r ms))
+        Nothing      -> pure ()
       pure cds'
-
 
 -- Gom kết quả từng người chơi (đã có tài khoản DB) rồi lưu một lượt.
 persistRun :: String -> Room -> Result -> MapState -> IO ()

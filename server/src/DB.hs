@@ -47,10 +47,11 @@ initSchema = do
       , "  role TEXT NOT NULL DEFAULT 'Warrior',"
       , "  level INT NOT NULL DEFAULT 1,"
       , "  exp INT NOT NULL DEFAULT 0,"
-      , "  gold INT NOT NULL DEFAULT 0,"
+      , "  gold INT NOT NULL DEFAULT 500,"
       , "  total_runs INT NOT NULL DEFAULT 0,"
       , "  total_wins INT NOT NULL DEFAULT 0,"
       , "  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());"
+      , "ALTER TABLE players ALTER COLUMN gold SET DEFAULT 500;"
       , "CREATE UNIQUE INDEX IF NOT EXISTS players_name_key ON players ((LOWER(name)));"
       , "CREATE TABLE IF NOT EXISTS game_sessions ("
       , "  id SERIAL PRIMARY KEY,"
@@ -160,7 +161,7 @@ saveRun roomCode startedAt result mapsCleared rps = do
           let (lv1, ex1) = addExp lv0 ex0 (rpExp p)
               win = if result == Victory then 1 else 0 :: Int
           _ <- execute conn
-            "UPDATE players SET level = ?, exp = ?, gold = gold + ?, \
+            "UPDATE players SET level = ?, exp = ?, gold = GREATEST(gold + ?, 0), \
             \total_runs = total_runs + 1, total_wins = total_wins + ?, updated_at = NOW() \
             \WHERE id = ?"
             (lv1, ex1, rpGold p, win, rpDbId p)
@@ -185,7 +186,7 @@ saveProgress dbId gold ex = do
       ((lv0, ex0) : _) -> do
         let (lv1, ex1) = addExp lv0 ex0 ex
         _ <- execute conn
-          "UPDATE players SET level = ?, exp = ?, gold = gold + ?, updated_at = NOW() WHERE id = ?"
+          "UPDATE players SET level = ?, exp = ?, gold = GREATEST(gold + ?, 0), updated_at = NOW() WHERE id = ?"
           (lv1, ex1, gold, dbId)
         putStrLn ("[DB] luu tien trinh nguoi choi " ++ show dbId)
   pure ()

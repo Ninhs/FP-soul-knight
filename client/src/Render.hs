@@ -4,7 +4,7 @@ import Graphics.Gloss
 import Animation (animKind, currentFrame)
 import Sprites (framesOf)
 import Components.UI (drawPauseOverlay, menuBackground)
-import ClientUI (toEnemyData, toScreenPosition)
+import ClientUI (chestRewardFor, toEnemyData, toScreenPosition)
 import Types
 import Types.GameState
 import qualified Types.GameState as GS
@@ -39,7 +39,7 @@ renderClient state = case appView state of
     ]
   ChestRewardView -> Pictures
     [ drawGameHUD (combatWorld state)
-    , drawChestRewardOverlay state (ChestReward 120 25 10) (mousePos state)
+    , drawChestRewardOverlay state (chestRewardFor state) (mousePos state)
     ]
   ShopNoticeView -> Pictures
     [ overlayBackground state
@@ -71,7 +71,6 @@ combatWorld state =
   in state
     { playerPos = playerPosition state
     , enemies = syncedEnemies
-    , playerMaxHealth = max 1 (characterMaxHp (characterStats (selectedChar state)))
     , projectiles =
         [ ProjectileData (toScreenPosition (GS.bPosition bullet))
         | bullet <- GS.bullets localMap

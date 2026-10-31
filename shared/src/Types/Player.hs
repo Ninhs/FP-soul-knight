@@ -31,6 +31,7 @@ data PlayerProfile = PlayerProfile
   , profileLv   :: Int
   , profileExp  :: Int
   , profileGold :: Int
+  , profileReady :: Bool   -- đã bấm READY UP (chủ phòng không cần)
   } deriving (Show, Generic)
 instance ToJSON PlayerProfile
 instance FromJSON PlayerProfile

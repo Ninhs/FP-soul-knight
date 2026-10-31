@@ -8,6 +8,9 @@ module Types
   , EnemyKind(..)
   , EnemyData(..)
   , AllyData(..)
+  , DamageText(..)
+  , damageEvents
+  , stepDamageTexts
   , ProjectileData(..)
   , ChestState(..)
   , ChestData(..)
@@ -102,6 +105,7 @@ data ClientState = ClientState
   , speedUpgradeLevel :: Int
   , attackEffectPos :: (Float, Float)
   , attackEffectTimer :: Float
+  , damageTexts :: [DamageText]   -- số sát thương bay lên khi đánh trúng quái
   , tutorialVisible :: Bool
   , isVictory :: Bool
   , noticeText :: String
@@ -166,7 +170,7 @@ data ChestData = ChestData
 data ChestReward = ChestReward
   { rewardGold :: Int
   , rewardHealth :: Float
-  , rewardArmor :: Float
+  , rewardGems :: Int
   } deriving (Eq, Show)
 
 data ShopItemKind
@@ -287,6 +291,7 @@ initialClientState assets =
     , speedUpgradeLevel = 0
     , attackEffectPos = (0, 0)
     , attackEffectTimer = 0
+    , damageTexts = []
     , tutorialVisible = False
     , isVictory = False
     , noticeText = ""
@@ -298,3 +303,38 @@ initialClientState assets =
     , allies = []
     , bossAnim = startAnim Idle
     }
+
+
+-- Số sát thương nổi lên trên đầu quái (toạ độ màn hình).
+data DamageText = DamageText
+  { dtPos :: (Float, Float)
+  , dtAmount :: Int
+  , dtAge :: Float
+  } deriving (Show)
+
+-- So sánh quái trước / sau một khung hình: quái mất máu (hoặc biến mất) = vừa bị đánh.
+-- Chỉ so khi cùng một màn; sang màn mới thì không có gì để so.
+damageEvents :: GS.MapState -> GS.MapState -> [DamageText]
+damageEvents before after
+  | GS.mapIndex before /= GS.mapIndex after = []
+  | otherwise = lost ++ gone
+  where
+    nowIds = map GS.monsterId (GS.monsters after)
+    lost =
+      [ DamageText (toScreenPosition (GS.mPosition m)) (h0 - GS.hp (GS.mStats m)) 0
+      | m <- GS.monsters after
+      , Just h0 <- [lookup (GS.monsterId m) prevHp]
+      , GS.hp (GS.mStats m) < h0
+      ]
+    gone =
+      [ DamageText (toScreenPosition (GS.mPosition m)) (GS.hp (GS.mStats m)) 0
+      | m <- GS.monsters before
+      , GS.monsterId m `notElem` nowIds
+      , GS.hp (GS.mStats m) > 0
+      ]
+    prevHp = [(GS.monsterId m, GS.hp (GS.mStats m)) | m <- GS.monsters before]
+
+-- Thêm số mới, tăng tuổi, bỏ số đã bay hết (0.8 giây).
+stepDamageTexts :: Float -> [DamageText] -> [DamageText] -> [DamageText]
+stepDamageTexts dt fresh old =
+  [ t { dtAge = dtAge t + dt } | t <- old ++ fresh, dtAge t + dt < 0.8 ]

@@ -77,6 +77,16 @@ stepLocalGameplay deltaTime direction attackPressed state
           (nextLevel, nextExp) =
             levelUp (playerLevel state) (playerExperience state + expGain)
           bossDied = any ((== 900) . GS.monsterId) deadMonsters
+          bossChest = case [m | m <- deadMonsters, GS.monsterId m == 900] of
+            (b : _) | bossDied && not (bossDefeated state) ->
+              Just (ChestData (toScreenPosition (GS.mPosition b)) ChestClosed)
+            _ -> Nothing
+          -- lên cấp thì hồi đầy máu
+          leveledUp = nextLevel > playerLevel state
+          healedPlayer
+            | leveledUp && Combat.isPlayerAlive finalPlayer =
+                finalPlayer { GS.stats = (GS.stats finalPlayer) { GS.hp = GS.maxHp (GS.stats finalPlayer) } }
+            | otherwise = finalPlayer
           nextBossDefeated = bossDefeated state || bossDied
           newlyCleared =
             [ room
@@ -89,7 +99,7 @@ stepLocalGameplay deltaTime direction attackPressed state
             ]
           nextClearedRooms = clearedRooms state ++ newlyCleared
           nextMap = currentMap
-            { GS.players = [finalPlayer]
+            { GS.players = [healedPlayer]
             , GS.monsters = livingMonsters
             , GS.bullets = remainingBullets
             , GS.drops = leftDrops
@@ -97,7 +107,6 @@ stepLocalGameplay deltaTime direction attackPressed state
           playerAlive = Combat.isPlayerAlive finalPlayer
           nextView
             | not playerAlive = DefeatView
-            | nextBossDefeated = VictoryView
             | otherwise = InGameView
           nextEffectTimer
             | effectStarted = 0.18
@@ -139,7 +148,8 @@ stepLocalGameplay deltaTime direction attackPressed state
           , activatedRooms = nextActivatedRooms
           , clearedRooms = nextClearedRooms
           , bossDefeated = nextBossDefeated
-          , playerHealth = fromIntegral (GS.hp (GS.stats finalPlayer))
+          , playerHealth = fromIntegral (GS.hp (GS.stats healedPlayer))
+          , treasureChest = maybe (treasureChest state) id bossChest
           , goldCoins = goldCoins state + goldGain
           , playerLevel = nextLevel
           , playerExperience = nextExp
@@ -151,10 +161,12 @@ stepLocalGameplay deltaTime direction attackPressed state
               ]
           , attackEffectPos = nextEffectPosition
           , attackEffectTimer = nextEffectTimer
+          , damageTexts = stepDamageTexts dt (damageEvents currentMap nextMap) (damageTexts state)
           , appView = nextView
           , statusText =
               if nextView == DefeatView then "DEFEAT"
               else if nextView == VictoryView then "ROOM CLEARED"
+              else if bossDied then "Boss defeated! Open the chest [E]"
               else if not (null newlyCleared) then "Room cleared! Door opened."
               else statusText state
           , bossHealth = maybe 0 (fromIntegral . GS.hp . GS.mStats) boss

@@ -2,7 +2,7 @@ module Room where
 
 import Control.Concurrent.STM
 import Control.Exception (SomeException, try)
-import Control.Monad (replicateM, void)
+import Control.Monad (replicateM, void, when)
 import Data.Time (UTCTime, getCurrentTime)
 import Data.Aeson (encode)
 import qualified Data.Map as Map
@@ -69,8 +69,8 @@ joinRoom room name saved = atomically $ do
           pid <- readTVar (roomNextId room)
           writeTVar (roomNextId room) (pid + 1)
           let profile = case saved of
-                Just sp -> PlayerProfile name (spRole sp) (spLevel sp) (spExp sp) (spGold sp)
-                Nothing -> PlayerProfile name Warrior 1 0 0
+                Just sp -> PlayerProfile name (spRole sp) (spLevel sp) (spExp sp) (spGold sp) False
+                Nothing -> PlayerProfile name Warrior 1 0 500 False
           case saved of
             Just sp -> modifyTVar' (roomDbIds room) (Map.insert pid (spId sp))
             Nothing -> pure ()
@@ -100,6 +100,12 @@ leaveRoom rooms code room pid = atomically $ do
 setInput :: Room -> Int -> PlayerInput -> IO ()
 setInput room pid inp = atomically $ modifyTVar' (roomInputs room) (Map.insert pid inp)
 
+-- Bật / tắt sẵn sàng ở lobby.
+setReady :: Room -> Int -> Bool -> IO ()
+setReady room pid flag = atomically $ modifyTVar' (roomState room) $ \gs -> case phase gs of
+  Lobby -> gs { profiles = [ (i, if i == pid then p { profileReady = flag } else p) | (i, p) <- profiles gs ] }
+  _ -> gs
+
 -- Chủ phòng (id nhỏ nhất) bắt đầu ván: Lobby -> Playing.
 startGame :: Room -> Int -> IO (Either String ())
 startGame room pid = getCurrentTime >>= \now -> atomically $ do
@@ -107,6 +113,8 @@ startGame room pid = getCurrentTime >>= \now -> atomically $ do
   case (phase gs, map fst (profiles gs)) of
     (Lobby, ids@(_ : _))
       | pid /= minimum ids -> pure (Left "Chi chu phong moi duoc bat dau")
+      | not (all (profileReady . snd) [x | x@(i, _) <- profiles gs, i /= pid]) ->
+          pure (Left "Con nguoi choi chua san sang")
       | otherwise -> do
           writeTVar (roomState room) gs { phase = Playing (newMapState (profiles gs)) }
           writeTVar (roomStarted room) (Just now)
@@ -130,7 +138,7 @@ takePending room pid = atomically $ do
   case (phase gs, Map.lookup pid ids) of
     (Playing ms, Just dbId) ->
       case [p | p <- players ms, playerId p == pid] of
-        (p : _) | pendingGold p > 0 || pendingExp p > 0 -> do
+        (p : _) | pendingGold p /= 0 || pendingExp p /= 0 -> do
           let clear q = if playerId q == pid then q { pendingGold = 0, pendingExp = 0 } else q
               -- phần đã lưu được cộng vào hồ sơ trong phòng để HUD không bị tụt số
               bump (i, pr)
@@ -144,3 +152,55 @@ takePending room pid = atomically $ do
           pure (Just (dbId, pendingGold p, pendingExp p))
         _ -> pure Nothing
     _ -> pure Nothing
+
+-- Cộng/trừ vàng (mở rương, mua đồ). Trừ chỉ được khi đủ vàng (đã lưu + vừa nhặt).
+adjustGold :: Room -> Int -> Int -> IO ()
+adjustGold room pid delta0 = atomically $ do
+  gs <- readTVar (roomState room)
+  case phase gs of
+    Playing ms ->
+      case ([p | p <- players ms, playerId p == pid], lookup pid (profiles gs)) of
+        (p : _, Just pr) -> do
+          let delta = max (-5000) (min 1000 delta0)
+              available = profileGold pr + pendingGold p
+              add q = if playerId q == pid then q { pendingGold = pendingGold q + delta } else q
+          when (delta >= 0 || available + delta >= 0) $
+            writeTVar (roomState room) gs { phase = Playing ms { players = map add (players ms) } }
+        _ -> pure ()
+    _ -> pure ()
+
+-- Hồi máu cho người chơi còn sống (tối đa tới maxHp).
+healPlayer :: Room -> Int -> Int -> IO ()
+healPlayer room pid amount0 = atomically $ modifyTVar' (roomState room) $ \gs ->
+  case phase gs of
+    Playing ms -> gs { phase = Playing ms { players = map heal (players ms) } }
+    _ -> gs
+  where
+    amount = max 0 (min 1000 amount0)
+    heal p
+      | playerId p == pid && status p == Alive =
+          p { stats = (stats p) { hp = min (maxHp (stats p)) (hp (stats p) + amount) } }
+      | otherwise = p
+
+-- Tăng chỉ số cho người chơi (mua bùa / giày / nâng cấp ở shop). Có giới hạn để không bị lạm dụng.
+-- Tăng máu tối đa thì máu hiện tại tăng theo cùng lượng.
+boostPlayer :: Room -> Int -> Int -> Float -> Int -> IO ()
+boostPlayer room pid dDmg0 dSpd0 dHp0 = atomically $ modifyTVar' (roomState room) $ \gs ->
+  case phase gs of
+    Playing ms -> gs { phase = Playing ms { players = map boost (players ms) } }
+    _ -> gs
+  where
+    dDmg = max 0 (min 20 dDmg0)
+    dSpd = max 0 (min 2 dSpd0)
+    dHp  = max 0 (min 100 dHp0)
+    boost p
+      | playerId p == pid && status p == Alive =
+          let st = stats p
+              newMax = min 1000 (maxHp st + dHp)
+          in p { stats = st
+                   { damage = min 500 (damage st + dDmg)
+                   , moveSpeed = min 20 (moveSpeed st + dSpd)
+                   , maxHp = newMax
+                   , hp = min newMax (hp st + (newMax - maxHp st))
+                   } }
+      | otherwise = p

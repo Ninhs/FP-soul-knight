@@ -5,7 +5,7 @@ import Control.Exception (SomeException, try)
 import Control.Monad (when)
 import Data.Char (toUpper)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import Data.List (find)
+import Data.List (find, isInfixOf)
 import Data.Maybe (fromMaybe)
 import System.Environment (lookupEnv)
 import System.Exit (exitSuccess)
@@ -25,11 +25,12 @@ import Assets (loadAssets)
 import ClientUI (UiAction(..), UiResult(..), reduceUi, startLocalRun, toEnemyData)
 import Components.UI (insideRect)
 import qualified MapLayout as Map
+import qualified StageLayout as Stage
 import Network
   ( NetworkConnection(..)
   , connectToServer
   )
-import Protocol (ClientMsg(StartGame, InputMsg, LeaveRoom, AdjustGold, HealSelf))
+import Protocol (ClientMsg(StartGame, InputMsg, LeaveRoom, AdjustGold, HealSelf, BoostStats, SetReady))
 import qualified Types.GameState as GS
 import ClientGameplay (stepLocalGameplay)
 import Input
@@ -96,28 +97,20 @@ syncEconomy net before after = do
   current <- readIORef (netConn net)
   case current of
     Just conn
-      | onlinePlayerId after /= Nothing ->
-          if unsupported
-            then pure before
-              { appView = ShopNoticeView
-              , noticeReturnView = appView before
-              , noticeText = "Not available in online mode yet."
-              }
-            else do
-              let dGold = goldCoins after - goldCoins before
-                  dHp = round (playerHealth after - playerHealth before) :: Int
-              when (dGold /= 0) $ sendClientMessage conn (AdjustGold dGold)
-              when (dHp > 0) $ sendClientMessage conn (HealSelf dHp)
-              pure after
+      | onlinePlayerId after /= Nothing -> do
+          let dGold = goldCoins after - goldCoins before
+              dMax = round (playerMaxHealth after - playerMaxHealth before) :: Int
+              dHp = round (playerHealth after - playerHealth before) :: Int
+              dDmg = round (playerDamage after - playerDamage before) :: Int
+              dSpd = (playerMoveSpeed after - playerMoveSpeed before) / worldScale
+          when (dGold /= 0) $ sendClientMessage conn (AdjustGold dGold)
+          -- tăng chỉ số trước (kèm máu tối đa), phần máu hồi thêm gửi sau
+          when (dDmg > 0 || dSpd > 0 || dMax > 0) $
+            sendClientMessage conn (BoostStats (max 0 dDmg) (max 0 dSpd) (max 0 dMax))
+          let heal = dHp - max 0 dMax
+          when (heal > 0) $ sendClientMessage conn (HealSelf heal)
+          pure after
     _ -> pure after
-  where
-    -- nâng cấp chỉ số / bùa sát thương / giày chỉ có tác dụng ở chế độ offline
-    unsupported =
-      healthUpgradeLevel after /= healthUpgradeLevel before
-        || damageUpgradeLevel after /= damageUpgradeLevel before
-        || speedUpgradeLevel after /= speedUpgradeLevel before
-        || playerDamage after /= playerDamage before
-        || playerMoveSpeed after /= playerMoveSpeed before
 
 handleInputRaw :: Net -> InputRefs -> Event -> ClientState -> IO ClientState
 handleInputRaw net inputRefs event state = do
@@ -145,7 +138,7 @@ handleInputRaw net inputRefs event state = do
 lobbyClick :: Net -> (Float, Float) -> ClientState -> IO (Maybe ClientState)
 lobbyClick net position state
   -- JOIN: nối server; ô mã phòng trống = tạo phòng mới
-  | insideRect position (215, 215) 130 58 = do
+  | insideRect position (235, 215) 130 58 = do
       current <- readIORef (netConn net)
       case current of
         Just _ -> pure (Just state { statusText = "Already connected to a room." })
@@ -153,7 +146,7 @@ lobbyClick net position state
           let code = map toUpper (roomInput state)
           result <- connectToServer (netHost net) (netPort net) code (accountName state)
           case result of
-            Left err -> pure (Just state { statusText = "Connect failed: " ++ err })
+            Left err -> pure (Just (errorPopup LobbyView (friendlyError err) state))
             Right conn -> do
               writeIORef (netConn net) (Just conn)
               writeIORef (netSent net) Nothing
@@ -166,19 +159,26 @@ lobbyClick net position state
                 , onlinePlayerId = Just (myPlayerId conn)
                 , sharedState = initialGameState conn
                 , statusText = "Joined room " ++ joinedRoomCode conn })
-  -- START RUN: khi đã online thì chỉ chủ phòng được bắt đầu
-  | insideRect position (150, -270) 220 52 = do
+  -- Nút giữa: chủ phòng = START RUN (khi mọi người đã sẵn sàng), người khác = READY UP
+  | insideRect position (0, -270) 260 52 = do
       current <- readIORef (netConn net)
       case current of
         Nothing -> pure Nothing
         Just conn -> do
-          let ids = map fst (GS.profiles (sharedState state))
+          let profs = GS.profiles (sharedState state)
+              ids = map fst profs
               isHost = ids /= [] && myPlayerId conn == minimum ids
+              others = [p | (i, p) <- profs, i /= myPlayerId conn]
+              mineReady = or [GS.profileReady p | (i, p) <- profs, i == myPlayerId conn]
           if isHost
-            then do
-              sendClientMessage conn StartGame
-              pure (Just state { statusText = "Starting..." })
-            else pure (Just state { statusText = "Only the host can start the run." })
+            then if all GS.profileReady others
+              then do
+                sendClientMessage conn StartGame
+                pure (Just state { statusText = "Starting..." })
+              else pure (Just state { statusText = "Waiting for every player to press READY UP." })
+            else do
+              sendClientMessage conn (SetReady (not mineReady))
+              pure (Just state { statusText = if mineReady then "You are not ready." else "You are ready." })
   -- BACK: rời phòng rồi để UI cũ quay lại màn trước
   | insideRect position (-450, -270) 200 52 = do
       leaveRoom net
@@ -233,10 +233,13 @@ updateOnline net conn inputRefs dt state = do
     Just err -> do
       writeIORef (netConn net) Nothing
       pure state
-        { appView = LobbyView
+        { appView = ShopNoticeView
+        , returnView = LobbyView
+        , noticeReturnView = LobbyView
+        , noticeText = friendlyError err
         , isMultiplayer = False
         , onlinePlayerId = Nothing
-        , statusText = "Disconnected: " ++ err
+        , statusText = "Disconnected."
         }
     Nothing -> do
       latest <- tryReadMVar (latestGameState conn)
@@ -258,7 +261,11 @@ updateOnline net conn inputRefs dt state = do
             sendClientMessage conn (InputMsg move (0, 0) True)
             writeIORef (netSent net) (Just move)
           let base = if appView state == LobbyView then freshOnlineRun state else state
-          pure (applyServerMap dt direction gs ms base)
+          let next = applyServerMap dt direction gs ms base
+          -- lên cấp thì hồi đầy máu (server giữ máu nên báo lên)
+          when (playerLevel next > playerLevel base && appView state /= LobbyView) $
+            sendClientMessage conn (HealSelf 1000)
+          pure next
         GS.RoomResult result ->
           pure state
             { sharedState = gs
@@ -288,10 +295,14 @@ accountName st = case filter (/= ' ') (playerName st) of
 -- Khởi tạo các trường phụ (HUD, animation...) bằng startLocalRun rồi xoá quái giả.
 freshOnlineRun :: ClientState -> ClientState
 freshOnlineRun state =
-  (startLocalRun state)
-    { enemies = []
+  let fresh = startLocalRun state
+  in fresh
+    { localMapState = (localMapState fresh) { GS.monsters = [] }
+    , enemies = []
     , enemyCorpses = []
     , allies = []
+    , damageTexts = []
+    , treasureChest = ChestData (0, 0) ChestClaimed
     , isMultiplayer = True
     , onlinePlayerId = onlinePlayerId state
     }
@@ -319,6 +330,8 @@ applyServerMap dt (dx, _) gs ms st = st
   , playerHealth = maybe (playerHealth st) (fromIntegral . GS.hp . GS.stats) me
   , playerMaxHealth = maybe (playerMaxHealth st) (fromIntegral . max 1 . GS.maxHp . GS.stats) me
   , playerAnim = stepAnim dt (pickAnim (playerSet (selectedChar st)) (any nearestIsMe hitMonsters) moved (playerAnim st))
+  , damageTexts = stepDamageTexts dt (damageEvents (localMapState st) ms) (damageTexts st)
+  , treasureChest = chestNow
   , attackEffectTimer = if null hitMonsters then max 0 (attackEffectTimer st - dt) else 0.18
   , attackEffectPos = case hitMonsters of
       (m : _) -> Map.toScreenPosition (GS.mPosition m)
@@ -327,6 +340,16 @@ applyServerMap dt (dx, _) gs ms st = st
   }
   where
     me = find ((== onlinePlayerId st) . Just . GS.playerId) (GS.players ms)
+    -- Rương online: hiện ở chỗ boss chết, hoặc ở chỗ quái cuối cùng chết khi dọn sạch phòng quái.
+    -- Sang màn khác thì rương cũ biến mất.
+    chestNow = case GS.monsters (localMapState st) of
+      prev
+        | not sameStage -> ChestData (0, 0) ChestClaimed
+        | (b : _) <- [m | m <- prev, GS.monsterId m == 900], GS.monsterId b `notElem` newIds ->
+            ChestData (Map.toScreenPosition (GS.mPosition b)) ChestClosed
+        | (m : _) <- prev, null (GS.monsters ms), GS.mapIndex ms < Stage.lastStage ->
+            ChestData (Map.toScreenPosition (GS.mPosition m)) ChestClosed
+        | otherwise -> treasureChest st
     -- vàng / EXP / cấp: hồ sơ đã lưu + phần nhặt được trong ván này (server tính)
     myProfile = onlinePlayerId st >>= \i -> lookup i (GS.profiles gs)
     (shownLevel, shownExp) = case myProfile of
@@ -437,3 +460,19 @@ smoothPos a (x0, y0) (x1, y1)
   where
     dx = x1 - x0
     dy = y1 - y0
+
+-- Lỗi mạng hiện bằng popup (không tràn màn hình): thông điệp ngắn, chi tiết kỹ thuật bỏ đi.
+errorPopup :: ViewState -> String -> ClientState -> ClientState
+errorPopup back message state = state
+  { appView = ShopNoticeView
+  , returnView = back
+  , noticeReturnView = back
+  , noticeText = message
+  }
+
+friendlyError :: String -> String
+friendlyError err
+  | length err <= 45 && not (any (`isInfixOf` err) ["Exception", "exception", "Connection", "refused"]) = err
+  | any (`isInfixOf` err) ["refused", "ConnectionFailure", "Connection", "timed out"] =
+      "Cannot reach the server. Try again later."
+  | otherwise = "Network error. Please try again."

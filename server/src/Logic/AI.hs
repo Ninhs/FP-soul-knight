@@ -14,7 +14,9 @@ module Logic.AI
 
 import Data.Maybe (fromMaybe)
 
-import Logic.Movement (Vec2, addVec, distance, normalize, scaleVec, subVec)
+import qualified MapLayout as Map
+import qualified StageLayout as Stage
+import Logic.Movement (Vec2, addVec, distance, moveWithAxisCollision, normalize, scaleVec, subVec)
 import Logic.Combat (MonsterAttackResult(..), monsterAttack, isPlayerAlive, isMonsterAlive)
 import Types.GameState
 
@@ -85,7 +87,7 @@ moveDirectionFor st monsterPos targetPos =
 --  CẤU HÌNH AI QUÁI (chỉnh số ở đây để tinh chỉnh độ khó) --
 
 monsterAggroRange :: Float
-monsterAggroRange = 6.0
+monsterAggroRange = 14.0
 
 meleeAttackRange :: Float
 meleeAttackRange = 1.0
@@ -116,6 +118,10 @@ updateAI dt ms = ms
     (monstersOut, playersOut, bulletsOut) =
       foldl stepMonster ([], players ms, []) (monsters ms)
 
+    -- Quái không ra khỏi vùng sàn của phòng
+    monsterBlocked pos =
+      Stage.blockedByWalls Map.monsterHitRadius (Map.toScreenPosition pos)
+
     stepMonster (accM, currentPlayers, accB) m
       | not (isMonsterAlive m) = (m : accM, currentPlayers, accB)
       | otherwise =
@@ -128,7 +134,7 @@ updateAI dt ms = ms
                                     decideAIState monsterAggroRange meleeAttackRange targetPos (mPosition m)
               dir            = moveDirectionFor aiState (mPosition m) (fromMaybe (mPosition m) targetPos)
               speed          = moveSpeed (mStats m)
-              newPos         = addVec (mPosition m) (scaleVec (speed * dt) dir)
+              newPos         = moveWithAxisCollision monsterBlocked (mPosition m) (scaleVec (speed * dt) dir)
               cooldownAfter  = max 0 (mCooldown m - dt)
               canAttack      = aiState == Attacking && cooldownAfter <= 0
           in case (canAttack, target) of

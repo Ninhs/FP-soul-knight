@@ -95,6 +95,10 @@ clientLoop conn room pid = loop
             Left err -> WS.sendTextData conn (encode (RoomError err))
             Right () -> pure ()
           loop
+        Just (AdjustGold d) -> adjustGold room pid d >> loop
+        Just (HealSelf n) -> healPlayer room pid n >> loop
+        Just (SetReady b) -> setReady room pid b >> loop
+        Just (BoostStats d sp h) -> boostPlayer room pid d sp h >> loop
         Just LeaveRoom -> pure ()
         _ -> loop
 

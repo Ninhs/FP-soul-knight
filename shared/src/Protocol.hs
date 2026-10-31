@@ -13,6 +13,14 @@ data ClientMsg
     -- ^ chủ phòng (id nhỏ nhất) bấm bắt đầu ván, chỉ hợp lệ khi phòng đang ở Lobby
   | InputMsg { moveDir :: (Float, Float), aimDir :: (Float, Float), attack :: Bool }
   | LeaveRoom
+  | AdjustGold Int
+    -- ^ cộng/trừ vàng sau khi mở rương hoặc mua đồ ở shop (server kiểm tra đủ vàng khi trừ)
+  | HealSelf Int
+    -- ^ hồi máu cho mình (uống bình thuốc, mở rương)
+  | SetReady Bool
+    -- ^ bật / tắt trạng thái sẵn sàng ở lobby (chủ phòng chỉ được bắt đầu khi mọi người đã sẵn sàng)
+  | BoostStats Int Float Int
+    -- ^ tăng chỉ số mình sau khi mua ở shop: (sát thương, tốc chạy theo đơn vị thế giới, máu tối đa)
   deriving (Show, Generic)
 instance ToJSON ClientMsg
 instance FromJSON ClientMsg

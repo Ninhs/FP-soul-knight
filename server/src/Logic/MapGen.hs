@@ -1,14 +1,16 @@
 {-# LANGUAGE ScopedTypeVariables #-}
--- Sinh MapState ban đầu cho một ván (dùng chung bố cục map với client qua MapLayout).
+-- Sinh MapState cho một ván: mỗi "màn" là một phòng riêng (xem StageLayout).
 module Logic.MapGen
   ( roomMapSize
   , newMapState
+  , enterStage
   ) where
 
 import qualified MapLayout as Map
+import qualified StageLayout as Stage
 import Types.GameState
 
--- Server hiện chỉ chơi bản đồ nhỏ (SmallMap) để khớp client.
+-- (Giữ lại cho các module cũ còn import; bố cục mới dùng StageLayout.)
 roomMapSize :: Map.MapSize
 roomMapSize = Map.SmallMap
 
@@ -17,51 +19,53 @@ statsFor :: Role -> Stats
 statsFor Warrior = Stats { hp = 150, maxHp = 150, damage = 25, moveSpeed = 4.5, atkSpeed = 0.45, atkRange = 3.0 }
 statsFor Archer  = Stats { hp = 100, maxHp = 100, damage = 18, moveSpeed = 5.0, atkSpeed = 0.45, atkRange = 8.0 }
 
--- Tạo ván mới cho danh sách người chơi (id, hồ sơ) đang ở phòng.
+-- Tạo ván mới: màn 0 (phòng đầu, không quái, cửa mở).
 newMapState :: [(Int, PlayerProfile)] -> MapState
-newMapState profs = MapState
-  { mapIndex  = 1
-  , isBossMap = False
-  , players   = zipWith mkPlayer [0 ..] profs
-  , monsters  = concatMap mkRoomMonsters (Map.monsterSpawns size)
-  , bullets   = []
-  , drops     = []
-  , portal    = Portal False (Map.toWorldPosition (Map.roomCenter size Map.BossRoom))
-  }
+newMapState profs = enterStage 0 base
   where
-    size = roomMapSize
-    (sx, sy) = Map.toWorldPosition (Map.startPosition size)
+    base = MapState
+      { mapIndex  = 0
+      , isBossMap = False
+      , players   = zipWith mkPlayer [0 ..] profs
+      , monsters  = []
+      , bullets   = []
+      , drops     = []
+      , portal    = Portal False (0, 0)
+      }
 
     mkPlayer :: Int -> (Int, PlayerProfile) -> Player
-    mkPlayer i (pid, prof) = Player
+    mkPlayer _ (pid, prof) = Player
       { playerId    = pid
-      , position    = (sx + fromIntegral i * 1.2, sy)   -- đứng cạnh nhau, không chồng lên
+      , position    = (0, 0)
       , stats       = statsFor (profileRole prof)
       , status      = Alive
       , pendingExp  = 0
       , pendingGold = 0
       }
 
-    mkRoomMonsters (room, spawns) = zipWith (mkMonster room) [1 ..] spawns
+-- Vào màn s: đặt lại vị trí người chơi còn sống ở phía dưới phòng, sinh quái của màn,
+-- xoá đạn. Vàng / EXP / máu của người chơi được giữ nguyên.
+enterStage :: Int -> MapState -> MapState
+enterStage s ms = ms
+  { mapIndex  = s
+  , isBossMap = s == Stage.lastStage
+  , players   = zipWith place [0 :: Int ..] (players ms)
+  , monsters  = zipWith mkMonster [1 :: Int ..] (Stage.stageSpawns s)
+  , bullets   = []
+  , portal    = Portal False (Map.toWorldPosition Stage.exitZoneCenter)
+  }
+  where
+    place i p = p { position = Map.toWorldPosition (Stage.entrySpawn i) }
 
-    mkMonster room (idx :: Int) sp =
-      let mid = case room of
-            Map.NormalA  -> 100 + idx
-            Map.NormalB  -> 200 + idx
-            Map.BossRoom -> 900
-            Map.StartRoom -> 0
-          (fx, fy) = Map.spawnFrac sp
-          (cx, cy) = Map.roomCenter size room
-          (hw, hh) = Map.roomHalfSize size room
-      in Monster
-           { monsterId = mid
-           , mPosition = Map.toWorldPosition (cx + fx * hw, cy + fy * hh)
-           , mStats    = Stats
-               { hp = Map.spawnHp sp, maxHp = Map.spawnHp sp
-               , damage = Map.spawnDamage sp
-               , moveSpeed = 68 / Map.worldScale
-               , atkSpeed = Map.spawnAttackRate sp
-               , atkRange = 3.0 }
-           , kind      = Map.spawnKind sp
-           , mCooldown = 0
-           }
+    mkMonster (idx :: Int) sp = Monster
+      { monsterId = if s == Stage.lastStage then 900 else 100 * s + idx
+      , mPosition = Map.toWorldPosition (Stage.ssPos sp)
+      , mStats    = Stats
+          { hp = Stage.ssHp sp, maxHp = Stage.ssHp sp
+          , damage = Stage.ssDamage sp
+          , moveSpeed = 68 / Map.worldScale
+          , atkSpeed = Stage.ssAttackRate sp
+          , atkRange = 3.0 }
+      , kind      = Stage.ssKind sp
+      , mCooldown = 0
+      }

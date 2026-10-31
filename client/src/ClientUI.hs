@@ -4,6 +4,7 @@ module ClientUI
   , reduceUi
   , startLocalRun
   , toEnemyData
+  , chestRewardFor
   , worldScale
   , toWorldPosition
   , toScreenPosition
@@ -17,6 +18,7 @@ import qualified Views.Shop as Shop
 import qualified Views.Upgrade as Upgrade
 import Types
 import qualified MapLayout as Map
+import qualified StageLayout as Stage
 import qualified Types.GameState as GS
 
 data UiAction
@@ -176,7 +178,7 @@ clickMapSelect position state
       Just state
         { appView = LobbyView
         , isMultiplayer = True
-        , statusText = "Offline mock lobby. Multiplayer is not connected here."
+        , statusText = "Press JOIN (blank code = create a new room)."
         }
   | otherwise = Nothing
 
@@ -184,23 +186,16 @@ clickLobby :: (Float, Float) -> ClientState -> Maybe ClientState
 clickLobby position state
   | insideRect position (-405, 143) 170 32 =
       Just state { statusText = "Room-code copy is unavailable in this window." }
-  | insideRect position (0, 172) 300 34 =
+  | insideRect position (0, 165) 320 34 =
       Just state { nameInputActive = True, roomInputActive = False
                  , statusText = "Type your name (letters/digits), then press Enter." }
   | insideRect position (0, 215) 320 58 =
       Just state { roomInputActive = True, nameInputActive = False
                  , statusText = "Enter letters, digits or -." }
-  | insideRect position (215, 215) 130 58 =
+  | insideRect position (235, 215) 130 58 =
       Just (submitRoomCode (state { roomInputActive = False }))
   | insideRect position (-450, -270) 200 52 =
-      Just state { appView = MapSelectView, isMultiplayer = False }
-  | insideRect position (-150, -270) 220 52 =
-      Just state
-        { isReady = not (isReady state)
-        , statusText = if isReady state then "You are not ready." else "Ready (local mock only)."
-        }
-  | insideRect position (150, -270) 220 52 =
-      Just (startLocalRun state)
+      Just state { appView = MapSelectView, isMultiplayer = False, onlinePlayerId = Nothing, roomCode = "LOCAL-01" }
   | insideRect position (450, -270) 220 52 =
       Just state { appView = CharacterSelectView }
   | otherwise = Nothing
@@ -270,13 +265,29 @@ clickChestReward :: (Float, Float) -> ClientState -> Maybe ClientState
 clickChestReward position state
   | insideRect position (0, -220) 220 54 =
       Just $ setPlayerHealth
-        (min (playerMaxHealth state) (playerHealth state + 25))
+        (min (playerMaxHealth state) (playerHealth state + rewardHealth reward))
         state
-          { appView = returnView state
-          , goldCoins = goldCoins state + 120
-
+          { appView = if offlineBoss then VictoryView else returnView state
+          , isVictory = offlineBoss || isVictory state
+          , goldCoins = goldCoins state + rewardGold reward
+          , gems = gems state + rewardGems reward
           }
   | otherwise = Nothing
+  where
+    reward = chestRewardFor state
+    -- offline: mở rương boss xong mới thắng ván (online: ván kết thúc khi vào cổng)
+    offlineBoss = onlinePlayerId state == Nothing && bossChestActive state
+
+-- Rương ở màn boss (sau khi boss chết) thưởng nhiều hơn rương thường.
+bossChestActive :: ClientState -> Bool
+bossChestActive st = case onlinePlayerId st of
+  Just _  -> GS.mapIndex (localMapState st) == Stage.lastStage
+  Nothing -> bossDefeated st
+
+chestRewardFor :: ClientState -> ChestReward
+chestRewardFor st
+  | bossChestActive st = ChestReward 300 60 10
+  | otherwise = ChestReward 120 25 2
 
 clickNotice :: (Float, Float) -> ClientState -> Maybe ClientState
 clickNotice position state
@@ -401,6 +412,8 @@ startLocalRun state =
     , attackEffectTimer = 0
     , tutorialVisible = False
     , statusText = "Diệt hết quái ở phòng trước để mở cửa"
+    , damageTexts = []
+    , treasureChest = ChestData (250, 150) ChestClosed
     , onlinePlayerId = Nothing   -- chơi solo: không dùng bản đồ online (Main.freshOnlineRun gán lại khi online)
     , allies = []
     , isVictory = False
@@ -444,9 +457,13 @@ purchaseItem item state
   | goldCoins state < price = showNotice "Not enough gold." ShopView state
   | otherwise =
       let updated = addInventory item (goldCoins state - price) state
+          hurt = playerHealth state < playerMaxHealth state
       in case item of
-        DamageCharm -> updated { playerDamage = playerDamage state + 3 }
+        DamageCharm -> syncPlayerDamage updated { playerDamage = playerDamage state + 3 }
         SwiftBoots -> updated { playerMoveSpeed = playerMoveSpeed state + 20 }
+        -- bình máu: đang bị thương thì dùng ngay khi mua, còn đầy máu thì cất vào túi
+        SmallHealthPotion | hurt -> consumeItem item updated
+        LargeHealthPotion | hurt -> consumeItem item updated
         _ -> updated
   where
     (_, _, price, _) = Shop.shopItemDetails item
@@ -497,7 +514,7 @@ applyUpgrade upgrade newGold state = case upgrade of
               (GS.players updatedMap)
           }
       }
-  DamageUpgrade -> state
+  DamageUpgrade -> syncPlayerDamage state
     { goldCoins = newGold
     , damageUpgradeLevel = damageUpgradeLevel state + 1
     , playerDamage = playerDamage state + 5
@@ -507,6 +524,17 @@ applyUpgrade upgrade newGold state = case upgrade of
     , speedUpgradeLevel = speedUpgradeLevel state + 1
     , playerMoveSpeed = playerMoveSpeed state + 10
     }
+
+-- Đưa sát thương mới vào nhân vật đang chơi (offline đánh theo GS.damage).
+syncPlayerDamage :: ClientState -> ClientState
+syncPlayerDamage state = state
+  { localMapState = mapState
+      { GS.players = map
+          (\p -> p { GS.stats = (GS.stats p) { GS.damage = max 0 (round (playerDamage state)) } })
+          (GS.players mapState)
+      }
+  }
+  where mapState = localMapState state
 
 useInventoryItem :: Int -> ClientState -> ClientState
 useInventoryItem slot state = case drop slot consumables of
@@ -569,7 +597,7 @@ interactWithChest state
 
 closeEnough :: (Float, Float) -> (Float, Float) -> Bool
 closeEnough (x1, y1) (x2, y2) =
-  sqrt ((x1 - x2) ^ (2 :: Int) + (y1 - y2) ^ (2 :: Int)) <= 70
+  sqrt ((x1 - x2) ^ (2 :: Int) + (y1 - y2) ^ (2 :: Int)) <= 110
 
 dropLast :: [a] -> [a]
 dropLast [] = []

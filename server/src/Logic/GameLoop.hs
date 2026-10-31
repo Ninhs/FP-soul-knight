@@ -13,7 +13,10 @@ import Logic.Combat
   , splitDeadMonsters
   , playerRadius
   )
+import qualified MapLayout as Map
+import qualified StageLayout as Stage
 import Logic.AI (updateAI)
+import Logic.MapGen (enterStage)
 import Logic.Portal (updatePortal)
 import Types.GameState
 
@@ -59,7 +62,21 @@ updateStep deltaTime newDrops ms0 =
     -- 8. Cập nhật trạng thái Cổng (mở cổng khi diệt sạch Boss)
     ms3 = updatePortal ms2
 
-  in ms3
+    -- 9. Hết quái + mọi người sống đứng ở ô trước cửa -> sang màn tiếp theo
+  in advanceStage ms3
+
+-- Phòng hết quái (cửa sắt mở) và tất cả người chơi còn sống chạm ô trước cửa
+-- thì sang màn kế tiếp. Màn boss không chuyển: thắng bằng cổng (updatePortal).
+advanceStage :: MapState -> MapState
+advanceStage ms
+  | isBossMap ms = ms
+  | not (null (monsters ms)) = ms
+  | allAliveInZone = enterStage (mapIndex ms + 1) ms
+  | otherwise = ms
+  where
+    alive = [p | p <- players ms, status p == Alive]
+    allAliveInZone = not (null alive)
+      && all (Stage.inExitZone Map.playerHitRadius . Map.toScreenPosition . position) alive
 
 -- 3. LOGIC RỚT ĐỒ & NHẶT ĐỒ (Drop System)
 

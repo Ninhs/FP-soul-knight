@@ -47,6 +47,7 @@ drawGameHUD w = Pictures
       , Pictures (map (drawProjectile w) (projectiles w))
       , drawPlayer w
       , drawAttackEffect w (attackEffectTimer w) (attackEffectPos w)
+      , drawDamageTexts w
       ]
   , drawFixedHud w
   , if tutorialVisible w then drawTutorialOverlay w else Blank
@@ -100,6 +101,9 @@ drawEnemy w enemy
       , Translate 0 (negate healthBarY) $
           drawTextShadow 0.10 Theme.cTextWhite Theme.cDarkBorder
             (enemyLabel (enemyKind enemy))
+      , Translate 0 (healthBarY + 14) $
+          drawCenteredText 0 0.10 Theme.cTextWhite Theme.cDarkBorder 0
+            (show (ceiling (enemyCurrentHp enemy) :: Int) ++ "/" ++ show (ceiling (enemyMaxHp enemy) :: Int))
       ]
   where
     (x, y) = enemyPos enemy
@@ -174,6 +178,8 @@ drawFixedHud w = Pictures
   , drawAssetSlot w SlotHudHealth
   , Translate (-384) 304 $
       drawHealthBar 200 16 (playerHealth w) (playerMaxHealth w)
+  , drawCenteredText (-384) 0.12 Theme.cTextWhite Theme.cDarkBorder 299
+      (show (ceiling (playerHealth w) :: Int) ++ " / " ++ show (ceiling (playerMaxHealth w) :: Int))
   , drawCenteredText (-384) 0.11 Theme.cAccentBlue Theme.cDarkBorder 268
       ("EXP " ++ show (playerExperience w) ++ " / " ++ show (playerLevel w * 100))
   , Translate 430 320 $ drawPanel 390 86
@@ -322,8 +328,8 @@ drawChestRewardOverlay w reward mouse = Pictures
       ("COINS +" ++ show (rewardGold reward))
   , rewardSlot w (0, -85) AssetHealth
       ("HEALTH +" ++ show (round (rewardHealth reward) :: Int))
-  , rewardSlot w (180, -85) AssetArmor
-      ("ARMOR +" ++ show (round (rewardArmor reward) :: Int))
+  , rewardSlot w (180, -85) AssetGem
+      ("GEMS +" ++ show (rewardGems reward))
   , Translate 0 (-220) $ drawSoulButton 220 54 "TAKE ALL"
       (insideRect mouse (0, -220) 220 54)
   ]
@@ -405,6 +411,8 @@ drawStageWorld w = Pictures
   , Pictures (map (drawProjectile w) (projectiles w))
   , drawPlayer w
   , drawAttackEffect w (attackEffectTimer w) (attackEffectPos w)
+  , if chestState (treasureChest w) == ChestClosed then drawChest w else Blank
+  , drawDamageTexts w
   ]
   where
     assets = appAssets w
@@ -431,3 +439,15 @@ drawStageWorld w = Pictures
           [ Color (makeColor 1.0 0.84 0.2 pulse) $ rectangleSolid zoneW zoneH
           , Color (makeColor 1.0 0.93 0.45 0.95) $ rectangleWire zoneW zoneH
           ]
+
+-- Số sát thương bay lên rồi mờ dần (toạ độ màn hình, vẽ trong thế giới game).
+drawDamageTexts :: World -> Picture
+drawDamageTexts w = Pictures (map one (damageTexts w))
+  where
+    one t =
+      let (x, y) = dtPos t
+          k = dtAge t / 0.8
+          alpha = max 0 (1 - k * k)
+      in Translate x (y + 56 + k * 46) $
+           drawCenteredText 0 0.2 (makeColor 1 0.86 0.2 alpha) (makeColor 0.25 0.05 0 alpha) 0
+             (show (dtAmount t))

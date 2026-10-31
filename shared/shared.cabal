@@ -12,6 +12,7 @@ library
     Types.GameState
     Protocol
     MapLayout
+    StageLayout
   build-depends:
     base,
     aeson

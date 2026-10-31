@@ -13,7 +13,7 @@ import qualified Data.Map as M
 import qualified MapLayout as Map
 import Logic.Combat
   ( AttackResult(..), isPlayerAlive, playerAttack, selectAutoTarget )
-import Logic.MapGen (roomMapSize)
+import qualified StageLayout as Stage
 import Logic.Movement (moveWithAxisCollision, stepFromInput)
 import Types.GameState
 
@@ -40,8 +40,7 @@ clearedRooms ms =
 applyInputs :: Float -> M.Map Int PlayerInput -> Cooldowns -> MapState -> (MapState, Cooldowns)
 applyInputs dt inputs cds0 ms0 = foldl' step (ms0, cds0) (map playerId (players ms0))
   where
-    opened = Map.openLinks (clearedRooms ms0)
-    blocked pos = Map.isBlocked roomMapSize opened Map.playerHitRadius (Map.toScreenPosition pos)
+    blocked pos = Stage.blockedByWalls Map.playerHitRadius (Map.toScreenPosition pos)
 
     step (ms, cds) pid = case filter ((== pid) . playerId) (players ms) of
       (p : _) | isPlayerAlive p ->

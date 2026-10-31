@@ -29,6 +29,7 @@ isBossDefeated = not . any (\m -> isBoss m && isMonsterAlive m)
 updatePortal :: MapState -> MapState
 updatePortal ms
     | portalActive pt                  = ms
+    | not (isBossMap ms)               = ms
     | isBossDefeated (monsters ms)     = ms { portal = pt { portalActive = True } }
     | otherwise                        = ms
   where pt = portal ms

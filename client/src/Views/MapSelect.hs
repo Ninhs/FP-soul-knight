@@ -29,10 +29,10 @@ drawMapSelect w = Pictures
   , drawMapInfo
   , Translate (-405) (-285) $ drawSoulButton 210 52 "BACK"
       (insideRect (mousePos w) (-405, -285) 210 52)
-  , Translate 40 (-285) $ drawSoulButton 180 52 "SOLO"
+  , Translate 40 (-285) $ drawSoulButton 180 52 "OFFLINE"
       (insideRect (mousePos w) (40, -285) 180 52)
   , Translate 330 (-285) $ drawSoulButton 180 52
-      "CO-OP MOCK"
+      "ONLINE"
       (insideRect (mousePos w) (330, -285) 180 52)
   ]
 
