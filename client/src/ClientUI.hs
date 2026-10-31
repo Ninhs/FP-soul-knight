@@ -18,6 +18,7 @@ import qualified Views.Shop as Shop
 import qualified Views.Upgrade as Upgrade
 import Types
 import qualified MapLayout as Map
+import qualified Logic.MapGen
 import qualified StageLayout as Stage
 import qualified Types.GameState as GS
 
@@ -57,8 +58,8 @@ reduceEnter state = case appView state of
     | otherwise -> Just (startLocalRun state)
   ShopNoticeView -> Just state { appView = noticeReturnView state }
   TutorialView -> Just state { appView = CharacterSelectView }
-  VictoryView -> Just (startLocalRun state)
-  DefeatView -> Just (startLocalRun state)
+  VictoryView -> Just (playAgain state)
+  DefeatView -> Just (playAgain state)
   PausedView -> Just state { appView = InGameView }
   _ -> Nothing
 
@@ -75,7 +76,7 @@ reduceKey key state
       Just (startLocalRun state)
   | appView state `elem` [VictoryView, DefeatView]
       && key `elem` ['r', 'R'] =
-      Just (startLocalRun state)
+      Just (playAgain state)
   | appView state == InGameView && key `elem` ['p', 'P'] =
       Just state { appView = PausedView }
   | appView state == InGameView && key `elem` ['i', 'I'] =
@@ -178,6 +179,7 @@ clickMapSelect position state
       Just state
         { appView = LobbyView
         , isMultiplayer = True
+        , onlinePlayerId = Nothing
         , statusText = "Press JOIN (blank code = create a new room)."
         }
   | otherwise = Nothing
@@ -300,16 +302,24 @@ clickConfirmation position state
   | insideRect position (-125, -72) 190 48 =
       Just state { appView = InGameView }
   | insideRect position (125, -72) 190 48 =
-      Just state { appView = MainMenuView, isMultiplayer = False }
+      Just state { appView = MainMenuView, isMultiplayer = False, onlinePlayerId = Nothing, roomCode = "LOCAL-01" }
   | otherwise = Nothing
 
 clickResult :: (Float, Float) -> ClientState -> Maybe ClientState
 clickResult position state
   | insideRect position (-145, -130) 250 58 =
-      Just (startLocalRun state)
+      Just (playAgain state)
   | insideRect position (155, -130) 210 58 =
-      Just state { appView = MainMenuView, isMultiplayer = False }
+      -- online: về menu thì rời phòng (Main.handleInput gửi LeaveRoom khi onlinePlayerId biến mất)
+      Just state { appView = MainMenuView, isMultiplayer = False, onlinePlayerId = Nothing, roomCode = "LOCAL-01" }
   | otherwise = Nothing
+
+-- Online: chơi tiếp = về lobby của phòng đang ở. Offline: chạy ván mới.
+playAgain :: ClientState -> ClientState
+playAgain state
+  | isMultiplayer state =
+      state { appView = LobbyView, isReady = False, statusText = "Back in the lobby." }
+  | otherwise = startLocalRun state
 
 selectCharacter :: Character -> ClientState -> ClientState
 selectCharacter character state =
@@ -325,84 +335,32 @@ selectCharacter character state =
 
 startLocalRun :: ClientState -> ClientState
 startLocalRun state =
-  let size = selectedMapSize state
-      playerStart = Map.startPosition size
-      maxHealth = max 1 (round (playerMaxHealth state))
-      playerStats = GS.Stats
-        { GS.hp = maxHealth
-        , GS.maxHp = maxHealth
-        , GS.damage = max 0 (round (playerDamage state))
-        , GS.moveSpeed = playerMoveSpeed state / worldScale
-        , GS.atkSpeed = 0.45
-        , GS.atkRange = 3.0
-        }
-      player = GS.Player
-        { GS.playerId = 1
-        , GS.position = toWorldPosition playerStart
-        , GS.stats = playerStats
-        , GS.status = GS.Alive
-        , GS.pendingExp = 0
-        , GS.pendingGold = 0
-        }
-      spawns =
-        [ (room, index, spawn)
-        | (room, roomSpawns) <- Map.monsterSpawns size
-        , (index, spawn) <- zip [1 ..] roomSpawns
-        ]
-      makeMonster (room, index, spawn) =
-        let monsterId' = case room of
-              Map.NormalA -> 100 + index
-              Map.NormalB -> 200 + index
-              Map.BossRoom -> 900
-              Map.StartRoom -> 0
-            (fx, fy) = Map.spawnFrac spawn
-            (centerX, centerY) = Map.roomCenter size room
-            (halfWidth, halfHeight) = Map.roomHalfSize size room
-            pixelPos = (centerX + fx * halfWidth, centerY + fy * halfHeight)
-            maximumHp = Map.spawnHp spawn
-            monsterKind = Map.spawnKind spawn
-        in GS.Monster
-          { GS.monsterId = monsterId'
-          , GS.mPosition = toWorldPosition pixelPos
-          , GS.mStats = GS.Stats
-              { GS.hp = maximumHp
-              , GS.maxHp = maximumHp
-              , GS.damage = Map.spawnDamage spawn
-              , GS.moveSpeed = 68 / worldScale
-              , GS.atkSpeed = Map.spawnAttackRate spawn
-              , GS.atkRange = 3.0
-              }
-          , GS.kind = monsterKind
-          , GS.mCooldown = 0
-          }
-      monsters = map makeMonster spawns
-      localMap = GS.MapState
-        { GS.mapIndex = 1
-        , GS.isBossMap = False
-        , GS.players = [player]
-        , GS.monsters = monsters
-        , GS.bullets = []
-        , GS.drops = []
-        , GS.portal = GS.Portal False (0, 0)
-        }
-      cooldowns =
-        [ (GS.monsterId monster, 0.6 + fromIntegral (GS.monsterId monster `mod` 4) * 0.15)
-        | monster <- monsters
-        ]
+  let role = if selectedChar state == Archer then GS.Archer else GS.Warrior
+      meta = GS.Meta (gems state) (healthUpgradeLevel state) (damageUpgradeLevel state) (speedUpgradeLevel state)
+      profile = GS.PlayerProfile "Player" role (playerLevel state) (playerExperience state)
+                  (goldCoins state) False meta
+      -- offline dùng đúng bản đồ + luật của chế độ online (phòng 1: cửa mở, phòng 2: quái, phòng 3: boss)
+      localMap = Logic.MapGen.newMapState [(1, profile)]
+      (playerStats, playerStart) = case GS.players localMap of
+        (p : _) -> (GS.stats p, toScreenPosition (GS.position p))
+        [] -> (GS.Stats 150 150 25 4.5 0.45 3.0, (0, 0))
   in state
     { appView = InGameView
+    , sharedState = GS.initialGameState
     , localMapState = localMap
     , localAttackCooldown = 0
-    , localMonsterAttackCooldowns = cooldowns
+    , localMonsterAttackCooldowns = []
     , playerPosition = playerStart
     , playerPos = playerStart
     , clearedRooms = []
     , activatedRooms = []
     , currentRoom = Just Map.StartRoom
     , bossDefeated = False
-    , playerHealth = fromIntegral maxHealth
-
-    , enemies = map toEnemyData monsters
+    , playerHealth = fromIntegral (GS.hp playerStats)
+    , playerMaxHealth = fromIntegral (GS.maxHp playerStats)
+    , playerDamage = fromIntegral (GS.damage playerStats)
+    , playerMoveSpeed = GS.moveSpeed playerStats * worldScale
+    , enemies = []
     , enemyCorpses = []
     , playerAnim = startAnim Idle
     , bossAnim = startAnim Idle
@@ -411,10 +369,13 @@ startLocalRun state =
     , projectiles = []
     , attackEffectTimer = 0
     , tutorialVisible = False
-    , statusText = "Diệt hết quái ở phòng trước để mở cửa"
+    , statusText = "Clear the room, then step into the golden zone"
     , damageTexts = []
-    , treasureChest = ChestData (250, 150) ChestClosed
-    , onlinePlayerId = Nothing   -- chơi solo: không dùng bản đồ online (Main.freshOnlineRun gán lại khi online)
+    , doorOpen = 1
+    , stageClock = 0
+    , treasureChest = ChestData (0, 0) ChestClaimed
+    , onlinePlayerId = Just 1    -- cùng đường vẽ / luật với online; offline chỉ là không có mạng (isMultiplayer = False)
+    , isMultiplayer = False
     , allies = []
     , isVictory = False
     }
@@ -423,9 +384,7 @@ localRunFinished :: ClientState -> Bool
 localRunFinished state =
   case GS.players (localMapState state) of
     [] -> True
-    player : _ ->
-      not (Combat.isPlayerAlive player)
-        || bossDefeated state
+    player : _ -> not (Combat.isPlayerAlive player)
 
 toEnemyData :: GS.Monster -> EnemyData
 toEnemyData monster = EnemyData
@@ -460,7 +419,7 @@ purchaseItem item state
           hurt = playerHealth state < playerMaxHealth state
       in case item of
         DamageCharm -> syncPlayerDamage updated { playerDamage = playerDamage state + 3 }
-        SwiftBoots -> updated { playerMoveSpeed = playerMoveSpeed state + 20 }
+        SwiftBoots -> syncPlayerSpeed updated { playerMoveSpeed = playerMoveSpeed state + 20 }
         -- bình máu: đang bị thương thì dùng ngay khi mua, còn đầy máu thì cất vào túi
         SmallHealthPotion | hurt -> consumeItem item updated
         LargeHealthPotion | hurt -> consumeItem item updated
@@ -519,7 +478,7 @@ applyUpgrade upgrade newGold state = case upgrade of
     , damageUpgradeLevel = damageUpgradeLevel state + 1
     , playerDamage = playerDamage state + 5
     }
-  MoveSpeedUpgrade -> state
+  MoveSpeedUpgrade -> syncPlayerSpeed state
     { goldCoins = newGold
     , speedUpgradeLevel = speedUpgradeLevel state + 1
     , playerMoveSpeed = playerMoveSpeed state + 10
@@ -531,6 +490,17 @@ syncPlayerDamage state = state
   { localMapState = mapState
       { GS.players = map
           (\p -> p { GS.stats = (GS.stats p) { GS.damage = max 0 (round (playerDamage state)) } })
+          (GS.players mapState)
+      }
+  }
+  where mapState = localMapState state
+
+-- Đưa tốc chạy mới vào nhân vật đang chơi (đơn vị thế giới = px / 35).
+syncPlayerSpeed :: ClientState -> ClientState
+syncPlayerSpeed state = state
+  { localMapState = mapState
+      { GS.players = map
+          (\p -> p { GS.stats = (GS.stats p) { GS.moveSpeed = playerMoveSpeed state / worldScale } })
           (GS.players mapState)
       }
   }

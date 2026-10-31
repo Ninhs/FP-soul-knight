@@ -23,7 +23,7 @@ drawGameResult isVictory w = Pictures
       drawTextShadow 0.11 Theme.cTextMuted Theme.cDarkBorder
         "LOCAL PREVIEW - PROGRESS IS NOT SAVED"
   , Translate (-145) (-130) $
-      drawSoulButton 250 58 "PLAY AGAIN"
+      drawSoulButton 250 58 (if onlinePlayerId w /= Nothing then "TO LOBBY" else "PLAY AGAIN")
         (insideRect mouse (-145, -130) 250 58)
   , Translate 155 (-130) $
       drawSoulButton 210 58 "MAIN MENU"

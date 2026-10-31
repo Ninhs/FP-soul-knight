@@ -6,6 +6,7 @@ module DB
   , loadPlayer
   , saveRun
   , saveProgress
+  , saveMeta
   , addExp
   , expToNext
   ) where
@@ -52,6 +53,10 @@ initSchema = do
       , "  total_wins INT NOT NULL DEFAULT 0,"
       , "  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW());"
       , "ALTER TABLE players ALTER COLUMN gold SET DEFAULT 500;"
+      , "ALTER TABLE players ADD COLUMN IF NOT EXISTS gems INT NOT NULL DEFAULT 10;"
+      , "ALTER TABLE players ADD COLUMN IF NOT EXISTS health_lv INT NOT NULL DEFAULT 0;"
+      , "ALTER TABLE players ADD COLUMN IF NOT EXISTS damage_lv INT NOT NULL DEFAULT 0;"
+      , "ALTER TABLE players ADD COLUMN IF NOT EXISTS speed_lv INT NOT NULL DEFAULT 0;"
       , "CREATE UNIQUE INDEX IF NOT EXISTS players_name_key ON players ((LOWER(name)));"
       , "CREATE TABLE IF NOT EXISTS game_sessions ("
       , "  id SERIAL PRIMARY KEY,"
@@ -83,6 +88,7 @@ data SavedPlayer = SavedPlayer
   , spLevel :: Int
   , spExp   :: Int
   , spGold  :: Int
+  , spMeta  :: Meta
   } deriving (Show)
 
 -- Tìm người chơi theo tên (không phân biệt hoa thường); chưa có thì tạo mới.
@@ -93,10 +99,11 @@ loadPlayer name = do
     rows <- query conn
       "INSERT INTO players (name) VALUES (?) \
       \ON CONFLICT ((LOWER(name))) DO UPDATE SET updated_at = NOW() \
-      \RETURNING id, role, level, exp, gold"
-      (Only name) :: IO [(Int, String, Int, Int, Int)]
+      \RETURNING id, role, level, exp, gold, gems, health_lv, damage_lv, speed_lv"
+      (Only name) :: IO [(Int, String, Int, Int, Int, Int, Int, Int, Int)]
     pure $ case rows of
-      ((i, role, lv, ex, gd) : _) -> Just (SavedPlayer i (parseRole role) lv ex gd)
+      ((i, role, lv, ex, gd, gm, hl, dl, sl) : _) ->
+        Just (SavedPlayer i (parseRole role) lv ex gd (Meta gm hl dl sl))
       []                          -> Nothing
   pure (r >>= id)
 
@@ -189,4 +196,13 @@ saveProgress dbId gold ex = do
           "UPDATE players SET level = ?, exp = ?, gold = GREATEST(gold + ?, 0), updated_at = NOW() WHERE id = ?"
           (lv1, ex1, gold, dbId)
         putStrLn ("[DB] luu tien trinh nguoi choi " ++ show dbId)
+  pure ()
+
+-- Lưu gem và cấp nâng cấp (giá trị tuyệt đối, ghi đè).
+saveMeta :: Int -> Meta -> IO ()
+saveMeta dbId m = do
+  _ <- safely "saveMeta" $ withConn $ \conn ->
+    execute conn
+      "UPDATE players SET gems = ?, health_lv = ?, damage_lv = ?, speed_lv = ?, updated_at = NOW() WHERE id = ?"
+      (metaGems m, metaHpLv m, metaDmgLv m, metaSpeedLv m, dbId)
   pure ()

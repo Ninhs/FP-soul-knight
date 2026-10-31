@@ -3,7 +3,7 @@ module Protocol where
 
 import GHC.Generics (Generic)
 import Data.Aeson (ToJSON, FromJSON)
-import Types.GameState (GameState)
+import Types.GameState (GameState, Meta, Role)
 
 -- Những gì CLIENT gửi lên server
 data ClientMsg
@@ -17,6 +17,10 @@ data ClientMsg
     -- ^ cộng/trừ vàng sau khi mở rương hoặc mua đồ ở shop (server kiểm tra đủ vàng khi trừ)
   | HealSelf Int
     -- ^ hồi máu cho mình (uống bình thuốc, mở rương)
+  | SaveMeta Meta
+    -- ^ lưu gem và cấp nâng cấp lên database (gửi mỗi khi mua nâng cấp / nhận gem)
+  | ChooseRole Role
+    -- ^ chọn nghề ở lobby (Warrior đánh gần, Archer bắn xa)
   | SetReady Bool
     -- ^ bật / tắt trạng thái sẵn sàng ở lobby (chủ phòng chỉ được bắt đầu khi mọi người đã sẵn sàng)
   | BoostStats Int Float Int
