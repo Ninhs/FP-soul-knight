@@ -11,6 +11,7 @@ import Data.List (isInfixOf)
 import System.Environment (lookupEnv)
 import Text.Read (readMaybe)
 
+import DB (loadPlayer, saveProgress)
 import Logic.Control (PlayerInput(..))
 import Protocol
 import Room
@@ -67,14 +68,15 @@ handleClient rooms conn = do
       case target of
         Nothing -> sendMsg (RoomError "Ma phong khong ton tai")
         Just (code, room) -> do
-          joinResult <- joinRoom room name
+          saved <- loadPlayer name
+          joinResult <- joinRoom room name saved
           case joinResult of
             Left err  -> sendMsg (RoomError err)
             Right pid -> do
               gs <- readTVarIO (roomState room)
               sendMsg (RoomJoined pid code gs)
               registerClient room pid conn
-              clientLoop conn room pid `finally` leaveRoom rooms code room pid
+              clientLoop conn room pid `finally` (saveLeaver room pid >> leaveRoom rooms code room pid)
     _ -> sendMsg (RoomError "Message dau tien phai la JoinRoom")
   where
     sendMsg = WS.sendTextData conn . encode
@@ -95,3 +97,11 @@ clientLoop conn room pid = loop
           loop
         Just LeaveRoom -> pure ()
         _ -> loop
+
+-- Người chơi thoát giữa ván: lưu ngay gold/exp đã nhặt.
+saveLeaver :: Room -> Int -> IO ()
+saveLeaver room pid = do
+  pending <- takePending room pid
+  case pending of
+    Just (dbId, gold, ex) -> saveProgress dbId gold ex
+    Nothing -> pure ()

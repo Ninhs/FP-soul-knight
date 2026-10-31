@@ -54,9 +54,14 @@ drawJoinPanel w = Pictures
       ]
   , Translate 145 0 $ drawSoulButton 130 58 "JOIN"
       (insideRect (mousePos w) (215, 215) 130 58)
-  , Translate (-70) (-39) $
-      drawTextShadow 0.10 Theme.cTextMuted Theme.cDarkBorder
-        "JOIN CONNECTS TO THE GAME SERVER"
+  , Translate (-70) (-43) $ Pictures
+      [ Color (if nameInputActive w then Theme.cPanelGlow else Theme.cPanelBorder) $
+          rectangleSolid 300 34
+      , Color Theme.cPanelBg $ rectangleSolid 294 28
+      , Translate (-138) (-5) $
+          drawTextShadow 0.12 Theme.cTextWhite Theme.cDarkBorder
+            (if null (playerName w) then "YOUR NAME (CLICK TO TYPE)" else playerName w)
+      ]
   ]
 
 drawSlots :: World -> Picture

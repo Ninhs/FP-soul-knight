@@ -7,6 +7,7 @@ module Types
   , MapSize(..)
   , EnemyKind(..)
   , EnemyData(..)
+  , AllyData(..)
   , ProjectileData(..)
   , ChestState(..)
   , ChestData(..)
@@ -67,6 +68,8 @@ data ClientState = ClientState
   , roomCode :: String
   , roomInput :: String
   , roomInputActive :: Bool
+  , playerName :: String          -- tên nhập ở lobby (khoá tài khoản trong DB)
+  , nameInputActive :: Bool
   , isReady :: Bool
   , isMultiplayer :: Bool
   , onlinePlayerId :: Maybe Int   -- id server cấp khi đang chơi online
@@ -105,6 +108,7 @@ data ClientState = ClientState
   , playerAnim :: AnimState
   , playerFacingRight :: Bool
   , enemyCorpses :: [EnemyData]
+  , allies :: [AllyData]   -- người chơi khác khi chơi online
   , bossAnim :: AnimState
   }
 
@@ -122,6 +126,16 @@ data CharacterStats = CharacterStats
 
 data EnemyKind = MeleeEnemy | RangedEnemy | TankEnemy | HighDamageEnemy
   deriving (Eq, Show, Read, Enum, Bounded)
+
+-- Đồng đội trong phòng online (vẽ bằng sprite, vị trí đã làm mượt)
+data AllyData = AllyData
+  { allyId :: Int
+  , allyName :: String
+  , allyPos :: (Float, Float)
+  , allyAnim :: AnimState
+  , allyFacingRight :: Bool
+  , allySprite :: SpriteSet
+  } deriving (Eq, Show)
 
 data EnemyData = EnemyData
   { enemyKind :: EnemyKind
@@ -237,6 +251,8 @@ initialClientState assets =
     , roomCode = "LOCAL-01"
     , roomInput = ""
     , roomInputActive = False
+    , playerName = ""
+    , nameInputActive = False
     , isReady = False
     , isMultiplayer = False
     , onlinePlayerId = Nothing
@@ -275,5 +291,6 @@ initialClientState assets =
     , playerAnim = startAnim Idle
     , playerFacingRight = True
     , enemyCorpses = []
+    , allies = []
     , bossAnim = startAnim Idle
     }

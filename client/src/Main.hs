@@ -2,6 +2,7 @@ module Main where
 
 import Control.Concurrent.MVar (tryReadMVar)
 import Control.Exception (SomeException, try)
+import Control.Monad (when)
 import Data.Char (toUpper)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.List (find)
@@ -18,7 +19,7 @@ import Graphics.Gloss.Interface.IO.Game
   , SpecialKey(..)
   , playIO
   )
-import Animation (AnimKind(..), setAnimKind, startAnim, stepAnim)
+import Animation (AnimKind(..), SpriteSet(..), setAnimKind, startAnim, stepAnim)
 import Assets (loadAssets)
 import ClientUI (UiAction(..), UiResult(..), reduceUi, startLocalRun, toEnemyData)
 import Components.UI (insideRect)
@@ -45,6 +46,7 @@ data Net = Net
   { netConn :: IORef (Maybe NetworkConnection)
   , netHost :: String
   , netPort :: Int
+  , netSent :: IORef (Maybe (Float, Float))   -- hướng di chuyển đã gửi lần cuối
   }
 
 main :: IO ()
@@ -72,7 +74,8 @@ runClient = do
   inputRefs <- newInputRefs
   (host, port) <- loadServerAddress
   connRef <- newIORef Nothing
-  let net = Net connRef host port
+  sentRef <- newIORef Nothing
+  let net = Net connRef host port sentRef
       window = InWindow "Soul Knight Haskell" (1280, 720) (100, 100)
       initialState = initialClientState assets
   playIO window black 60 initialState
@@ -112,15 +115,17 @@ lobbyClick net position state
         Just _ -> pure (Just state { statusText = "Already connected to a room." })
         Nothing -> do
           let code = map toUpper (roomInput state)
-          result <- connectToServer (netHost net) (netPort net) code "Player"
+          result <- connectToServer (netHost net) (netPort net) code (accountName state)
           case result of
             Left err -> pure (Just state { statusText = "Connect failed: " ++ err })
             Right conn -> do
               writeIORef (netConn net) (Just conn)
+              writeIORef (netSent net) Nothing
               pure (Just state
                 { roomCode = joinedRoomCode conn
                 , roomInput = ""
                 , roomInputActive = False
+                , nameInputActive = False
                 , isMultiplayer = True
                 , onlinePlayerId = Just (myPlayerId conn)
                 , sharedState = initialGameState conn
@@ -151,6 +156,7 @@ leaveRoom net = do
     Just conn -> sendClientMessage conn LeaveRoom
     Nothing -> pure ()
   writeIORef (netConn net) Nothing
+  writeIORef (netSent net) Nothing
 
 applyUiAction :: InputRefs -> UiAction -> ClientState -> IO ClientState
 applyUiAction inputRefs action state =
@@ -210,7 +216,11 @@ updateOnline net conn inputRefs dt state = do
         GS.Playing ms -> do
           -- tự động đánh (server chọn mục tiêu gần nhất trong tầm)
           let move = if appView state == InGameView then direction else (0, 0)
-          sendClientMessage conn (InputMsg move (0, 0) True)
+          -- chỉ gửi khi hướng đổi (server giữ input cuối cùng), tránh 60 gói/giây qua mạng
+          lastMove <- readIORef (netSent net)
+          when (lastMove /= Just move) $ do
+            sendClientMessage conn (InputMsg move (0, 0) True)
+            writeIORef (netSent net) (Just move)
           let base = if appView state == LobbyView then freshOnlineRun state else state
           pure (applyServerMap dt direction gs ms base)
         GS.RoomResult result ->
@@ -221,12 +231,25 @@ updateOnline net conn inputRefs dt state = do
                 else appView state
             }
 
+-- Cùng công thức với server (cấp n cần n*100 EXP).
+levelFor :: Int -> Int -> (Int, Int)
+levelFor lv xp
+  | xp >= lv * 100 = levelFor (lv + 1) (xp - lv * 100)
+  | otherwise = (lv, xp)
+
+-- Tên gửi lên server; để trống thì dùng "Player".
+accountName :: ClientState -> String
+accountName st = case filter (/= ' ') (playerName st) of
+  [] -> "Player"
+  n  -> n
+
 -- Khởi tạo các trường phụ (HUD, animation...) bằng startLocalRun rồi xoá quái giả.
 freshOnlineRun :: ClientState -> ClientState
 freshOnlineRun state =
   (startLocalRun state)
     { enemies = []
     , enemyCorpses = []
+    , allies = []
     , isMultiplayer = True
     , onlinePlayerId = onlinePlayerId state
     }
@@ -236,13 +259,17 @@ applyServerMap :: Float -> (Float, Float) -> GS.GameState -> GS.MapState -> Clie
 applyServerMap dt (dx, _) gs ms st = st
   { sharedState = gs
   , localMapState = ms
-  , playerPosition = myScreen
-  , playerPos = myScreen
+  , playerPosition = shown
+  , playerPos = shown
   , enemies = newEnemies
+  , allies = newAllies
   , enemyCorpses = map (\e -> e { enemyAnim = stepAnim dt (enemyAnim e) }) (enemyCorpses st ++ newCorpses)
   , clearedRooms = cleared
-  , currentRoom = Map.roomAt (selectedMapSize st) myScreen
+  , currentRoom = Map.roomAt (selectedMapSize st) shown
   , bossDefeated = not (any ((== 900) . GS.monsterId) (GS.monsters ms))
+  , playerLevel = shownLevel
+  , playerExperience = shownExp
+  , goldCoins = shownGold
   , playerHealth = maybe (playerHealth st) (fromIntegral . GS.hp . GS.stats) me
   , playerMaxHealth = maybe (playerMaxHealth st) (fromIntegral . max 1 . GS.maxHp . GS.stats) me
   , playerAnim = stepAnim dt (setAnimKind (if moved then Walk else Idle) (playerAnim st))
@@ -250,8 +277,19 @@ applyServerMap dt (dx, _) gs ms st = st
   }
   where
     me = find ((== onlinePlayerId st) . Just . GS.playerId) (GS.players ms)
+    -- vàng / EXP / cấp: hồ sơ đã lưu + phần nhặt được trong ván này (server tính)
+    myProfile = onlinePlayerId st >>= \i -> lookup i (GS.profiles gs)
+    (shownLevel, shownExp) = case myProfile of
+      Just pr -> levelFor (GS.profileLv pr) (GS.profileExp pr + maybe 0 GS.pendingExp me)
+      Nothing -> (playerLevel st, playerExperience st)
+    shownGold = case myProfile of
+      Just pr -> GS.profileGold pr + maybe 0 GS.pendingGold me
+      Nothing -> goldCoins st
     myScreen = maybe (playerPosition st) (Map.toScreenPosition . GS.position) me
-    moved = distance2 myScreen (playerPosition st) > 0.01
+    -- server gửi 30 lần/giây còn màn hình vẽ 60 khung/giây: làm mượt vị trí để khỏi giật
+    alpha = smoothFactor dt
+    shown = smoothPos alpha (playerPosition st) myScreen
+    moved = distance2 shown (playerPosition st) > 0.04
     distance2 (a, b) (c, d) = (a - c) * (a - c) + (b - d) * (b - d)
     cleared =
       [ r
@@ -264,14 +302,56 @@ applyServerMap dt (dx, _) gs ms st = st
     carry e = case lookup (enemyId e) oldById of
       Nothing -> e
       Just old ->
-        let (ox, _) = enemyPos old
-            (nx, _) = enemyPos e
-            movedE = distance2 (enemyPos old) (enemyPos e) > 0.01
-        in e { enemyAnim = stepAnim dt (setAnimKind (if movedE then Walk else Idle) (enemyAnim old))
+        let shownE = smoothPos alpha (enemyPos old) (enemyPos e)
+            (ox, _) = enemyPos old
+            (nx, _) = shownE
+            movedE = distance2 (enemyPos old) shownE > 0.04
+        in e { enemyPos = shownE
+             , enemyAnim = stepAnim dt (setAnimKind (if movedE then Walk else Idle) (enemyAnim old))
              , enemyFacingRight = if nx > ox then True else if nx < ox then False else enemyFacingRight old }
+    -- đồng đội: mọi người chơi còn sống trừ mình, có sprite và vị trí làm mượt
+    oldAllies = [(allyId x, x) | x <- allies st]
+    newAllies =
+      [ mkAlly p
+      | p <- GS.players ms
+      , Just (GS.playerId p) /= onlinePlayerId st
+      , GS.status p == GS.Alive
+      ]
+    mkAlly p =
+      let pid = GS.playerId p
+          target = Map.toScreenPosition (GS.position p)
+          sprite = case lookup pid (GS.profiles gs) of
+            Just prof | GS.profileRole prof == GS.Archer -> ArcherSet
+            _ -> SoldierSet
+      in case lookup pid oldAllies of
+           Nothing -> AllyData pid ("P" ++ show pid) target (startAnim Idle) True sprite
+           Just old ->
+             let shownA = smoothPos alpha (allyPos old) target
+                 (ox, _) = allyPos old
+                 (nx, _) = shownA
+                 movedA = distance2 (allyPos old) shownA > 0.04
+             in old
+                  { allyPos = shownA
+                  , allySprite = sprite
+                  , allyAnim = stepAnim dt (setAnimKind (if movedA then Walk else Idle) (allyAnim old))
+                  , allyFacingRight = if nx > ox then True else if nx < ox then False else allyFacingRight old
+                  }
     -- quái có ở frame trước nhưng không còn trong danh sách sống = vừa chết
     newCorpses =
       [ old { enemyIsAlive = False, enemyAnim = startAnim Die }
       | old <- enemies st
       , enemyId old `notElem` newIds
       ]
+
+-- Hệ số làm mượt theo thời gian khung hình (hằng số 18 ~ trễ khoảng 55 ms).
+smoothFactor :: Float -> Float
+smoothFactor dt = 1 - exp (negate 18 * max 0 dt)
+
+-- Kéo vị trí đang hiển thị về phía vị trí server; nhảy quá xa (mới vào ván) thì đặt thẳng.
+smoothPos :: Float -> (Float, Float) -> (Float, Float) -> (Float, Float)
+smoothPos a (x0, y0) (x1, y1)
+  | dx * dx + dy * dy > 200 * 200 = (x1, y1)
+  | otherwise = (x0 + dx * a, y0 + dy * a)
+  where
+    dx = x1 - x0
+    dy = y1 - y0

@@ -3,12 +3,14 @@ module Room where
 import Control.Concurrent.STM
 import Control.Exception (SomeException, try)
 import Control.Monad (replicateM, void)
+import Data.Time (UTCTime, getCurrentTime)
 import Data.Aeson (encode)
 import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Network.WebSockets as WS
 import System.Random (randomRIO)
 
+import DB (SavedPlayer(..))
 import Logic.Control (PlayerInput)
 import Logic.MapGen (newMapState)
 import Protocol
@@ -20,6 +22,8 @@ data Room = Room
   , roomInputs  :: TVar (Map Int PlayerInput)
   , roomClients :: TVar (Map Int WS.Connection)
   , roomNextId  :: TVar Int
+  , roomDbIds   :: TVar (Map Int Int)       -- id trong phòng -> id trong bảng players
+  , roomStarted :: TVar (Maybe UTCTime)     -- lúc bắt đầu ván
   }
 
 -- Toàn bộ các phòng đang mở, key = mã phòng
@@ -40,6 +44,8 @@ createRoom rooms = do
                <*> newTVarIO Map.empty
                <*> newTVarIO Map.empty
                <*> newTVarIO 1
+               <*> newTVarIO Map.empty
+               <*> newTVarIO Nothing
   ok <- atomically $ do
     m <- readTVar rooms
     if Map.member code m
@@ -53,8 +59,8 @@ lookupRoom rooms code = Map.lookup code <$> readTVarIO rooms
 
 -- Thêm người chơi vào phòng (chỉ khi đang ở Lobby và chưa đủ 4 người).
 -- Cấp id mới tăng dần, trả về id đó.
-joinRoom :: Room -> String -> IO (Either String Int)
-joinRoom room name = atomically $ do
+joinRoom :: Room -> String -> Maybe SavedPlayer -> IO (Either String Int)
+joinRoom room name saved = atomically $ do
   gs <- readTVar (roomState room)
   case phase gs of
     Lobby
@@ -62,7 +68,12 @@ joinRoom room name = atomically $ do
       | otherwise -> do
           pid <- readTVar (roomNextId room)
           writeTVar (roomNextId room) (pid + 1)
-          let profile = PlayerProfile name Warrior 1 0 0
+          let profile = case saved of
+                Just sp -> PlayerProfile name (spRole sp) (spLevel sp) (spExp sp) (spGold sp)
+                Nothing -> PlayerProfile name Warrior 1 0 0
+          case saved of
+            Just sp -> modifyTVar' (roomDbIds room) (Map.insert pid (spId sp))
+            Nothing -> pure ()
           writeTVar (roomState room) gs { profiles = profiles gs ++ [(pid, profile)] }
           pure (Right pid)
     _ -> pure (Left "Phong da bat dau, khong the vao")
@@ -91,13 +102,14 @@ setInput room pid inp = atomically $ modifyTVar' (roomInputs room) (Map.insert p
 
 -- Chủ phòng (id nhỏ nhất) bắt đầu ván: Lobby -> Playing.
 startGame :: Room -> Int -> IO (Either String ())
-startGame room pid = atomically $ do
+startGame room pid = getCurrentTime >>= \now -> atomically $ do
   gs <- readTVar (roomState room)
   case (phase gs, map fst (profiles gs)) of
     (Lobby, ids@(_ : _))
       | pid /= minimum ids -> pure (Left "Chi chu phong moi duoc bat dau")
       | otherwise -> do
           writeTVar (roomState room) gs { phase = Playing (newMapState (profiles gs)) }
+          writeTVar (roomStarted room) (Just now)
           pure (Right ())
     (Lobby, []) -> pure (Left "Phong chua co nguoi choi")
     _ -> pure (Left "Van dau da bat dau")
@@ -108,3 +120,19 @@ broadcast room msg = do
   conns <- readTVarIO (roomClients room)
   let bytes = encode msg
   mapM_ (\c -> void (try (WS.sendTextData c bytes) :: IO (Either SomeException ()))) (Map.elems conns)
+
+-- Lấy (và xoá về 0) gold/exp chưa lưu của một người chơi đang trong ván.
+-- Trả về (dbId, gold, exp) nếu người đó có tài khoản DB và có gì để lưu.
+takePending :: Room -> Int -> IO (Maybe (Int, Int, Int))
+takePending room pid = atomically $ do
+  gs <- readTVar (roomState room)
+  ids <- readTVar (roomDbIds room)
+  case (phase gs, Map.lookup pid ids) of
+    (Playing ms, Just dbId) ->
+      case [p | p <- players ms, playerId p == pid] of
+        (p : _) | pendingGold p > 0 || pendingExp p > 0 -> do
+          let clear q = if playerId q == pid then q { pendingGold = 0, pendingExp = 0 } else q
+          writeTVar (roomState room) gs { phase = Playing ms { players = map clear (players ms) } }
+          pure (Just (dbId, pendingGold p, pendingExp p))
+        _ -> pure Nothing
+    _ -> pure Nothing

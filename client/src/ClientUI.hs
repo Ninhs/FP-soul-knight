@@ -48,6 +48,8 @@ reduceEnter state = case appView state of
   CharacterSelectView -> Just state { appView = MapSelectView }
   MapSelectView -> Just (startLocalRun state)
   LobbyView
+    | nameInputActive state ->
+        Just state { nameInputActive = False, statusText = "Name set." }
     | roomInputActive state ->
         Just (submitRoomCode (state { roomInputActive = False }))
     | otherwise -> Just (startLocalRun state)
@@ -60,6 +62,8 @@ reduceEnter state = case appView state of
 
 reduceKey :: Char -> ClientState -> Maybe ClientState
 reduceKey key state
+  | appView state == LobbyView && nameInputActive state =
+      editNameInput key state
   | appView state == LobbyView && roomInputActive state =
       editRoomInput key state
   | appView state == CharacterSelectView && key `elem` ['a', 'A', 'd', 'D'] =
@@ -89,6 +93,8 @@ reduceKey key state
 
 reduceBackspace :: ClientState -> Maybe ClientState
 reduceBackspace state
+  | appView state == LobbyView && nameInputActive state =
+      Just state { playerName = dropLast (playerName state) }
   | appView state == LobbyView && roomInputActive state =
       Just state { roomInput = dropLast (roomInput state) }
   | otherwise = Nothing
@@ -98,6 +104,13 @@ editRoomInput key state
   | key == '\b' = Just state { roomInput = dropLast (roomInput state) }
   | validRoomCharacter key && length (roomInput state) < 12 =
       Just state { roomInput = roomInput state ++ [toUpper key] }
+  | otherwise = Nothing
+
+editNameInput :: Char -> ClientState -> Maybe ClientState
+editNameInput key state
+  | key == '\b' = Just state { playerName = dropLast (playerName state) }
+  | (isAlphaNum key || key == '_') && length (playerName state) < 12 =
+      Just state { playerName = playerName state ++ [key] }
   | otherwise = Nothing
 
 validRoomCharacter :: Char -> Bool
@@ -171,8 +184,12 @@ clickLobby :: (Float, Float) -> ClientState -> Maybe ClientState
 clickLobby position state
   | insideRect position (-405, 143) 170 32 =
       Just state { statusText = "Room-code copy is unavailable in this window." }
+  | insideRect position (0, 172) 300 34 =
+      Just state { nameInputActive = True, roomInputActive = False
+                 , statusText = "Type your name (letters/digits), then press Enter." }
   | insideRect position (0, 215) 320 58 =
-      Just state { roomInputActive = True, statusText = "Enter letters, digits or -." }
+      Just state { roomInputActive = True, nameInputActive = False
+                 , statusText = "Enter letters, digits or -." }
   | insideRect position (215, 215) 130 58 =
       Just (submitRoomCode (state { roomInputActive = False }))
   | insideRect position (-450, -270) 200 52 =

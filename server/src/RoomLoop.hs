@@ -1,12 +1,14 @@
 -- Vòng lặp game của MỘT phòng: đọc input -> cập nhật -> phát StateUpdate.
 module RoomLoop (roomLoop) where
 
-import Control.Concurrent (threadDelay)
+import Control.Concurrent (forkIO, threadDelay)
 import Control.Concurrent.STM
-import Control.Monad (when)
+import Control.Monad (void, when)
+import Data.Time (getCurrentTime)
 import qualified Data.Map as M
 import GHC.Clock (getMonotonicTime)
 
+import DB (RunPlayer(..), saveRun)
 import Logic.Control (Cooldowns, applyInputs)
 import Logic.GameLoop (generateDropsIO, updateStep)
 import Logic.Portal (roomOutcome)
@@ -53,4 +55,28 @@ roomLoop rooms code room = getMonotonicTime >>= go (0 :: Int) M.empty
       atomically $ modifyTVar' (roomState room) $ \g -> case phase g of
         Playing _ -> g { phase = next }
         _         -> g
+      -- Ván vừa kết thúc (chỉ xảy ra đúng 1 lần): lưu kết quả vào DB ở thread riêng
+      case next of
+        RoomResult r -> void (forkIO (persistRun code room r ms3))
+        _            -> pure ()
       pure cds'
+
+
+-- Gom kết quả từng người chơi (đã có tài khoản DB) rồi lưu một lượt.
+persistRun :: String -> Room -> Result -> MapState -> IO ()
+persistRun code room result ms = do
+  dbIds   <- readTVarIO (roomDbIds room)
+  started <- readTVarIO (roomStarted room)
+  gs      <- readTVarIO (roomState room)
+  now     <- getCurrentTime
+  let hostPid = case map fst (profiles gs) of
+        [] -> -1
+        ids -> minimum ids
+      roleOf pid = maybe Warrior profileRole (lookup pid (profiles gs))
+      rps = [ RunPlayer dbId (roleOf (playerId p)) (playerId p == hostPid)
+                        (status p) (pendingGold p) (pendingExp p)
+            | p <- players ms
+            , status p /= Disconnected
+            , Just dbId <- [M.lookup (playerId p) dbIds] ]
+  when (not (null rps)) $
+    saveRun code (maybe now id started) result (mapIndex ms) rps

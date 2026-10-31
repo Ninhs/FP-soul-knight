@@ -1,6 +1,8 @@
 module Render (renderGame, renderClient) where
 
 import Graphics.Gloss
+import Animation (animKind, currentFrame)
+import Sprites (framesOf)
 import Components.UI (drawPauseOverlay, menuBackground)
 import ClientUI (toEnemyData, toScreenPosition)
 import Types
@@ -130,21 +132,19 @@ renderResult :: Result -> Picture
 renderResult Victory = Scale 0.4 0.4 $ Color green $ Text "CHIEN THANG"
 renderResult Defeat  = Scale 0.4 0.4 $ Color red   $ Text "THUA CUOC"
 
--- Vẽ đồng đội khi chơi online (người chơi của mình đã do drawGameHUD vẽ).
+-- Vẽ đồng đội khi chơi online bằng sprite (người chơi của mình do drawGameHUD vẽ).
 -- Toạ độ trừ đi vị trí mình để khớp camera của drawGameHUD.
 drawAllies :: ClientState -> Picture
-drawAllies state = case onlinePlayerId state of
-  Nothing -> Blank
-  Just me ->
-    let (px, py) = playerPosition state
-    in Pictures
-         [ Translate (x - px) (y - py) $ Pictures
-             [ Color (makeColor 0.3 0.7 1.0 1.0) (circleSolid 14)
-             , Translate (-24) 22 $ Scale 0.1 0.1 $ Color white $
-                 Text ("P" ++ show (GS.playerId p))
-             ]
-         | p <- GS.players (localMapState state)
-         , GS.playerId p /= me
-         , GS.status p == GS.Alive
-         , let (x, y) = toScreenPosition (GS.position p)
-         ]
+drawAllies state = Translate (negate px) (negate py) $ Pictures (map drawAlly (allies state))
+  where
+    (px, py) = playerPosition state
+    drawAlly a =
+      let (x, y) = allyPos a
+          frames = framesOf (appAssets state) (allySprite a) (animKind (allyAnim a))
+          frame = currentFrame frames (allyAnim a)
+          s = 56 / 32
+          sx = if allyFacingRight a then s else negate s
+      in Translate x y $ Pictures
+           [ Scale sx s frame
+           , Translate (-10) 40 $ Scale 0.1 0.1 $ Color white $ Text (allyName a)
+           ]
