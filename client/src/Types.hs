@@ -69,6 +69,7 @@ data ClientState = ClientState
   , roomInputActive :: Bool
   , isReady :: Bool
   , isMultiplayer :: Bool
+  , onlinePlayerId :: Maybe Int   -- id server cấp khi đang chơi online
   , statusText :: String
   , playerPos :: (Float, Float)
   , enemies :: [EnemyData]
@@ -92,7 +93,6 @@ data ClientState = ClientState
   , shopRefreshes :: Int
   , upgradeRefreshes :: Int
   , healthUpgradeLevel :: Int
-  , armorUpgradeLevel :: Int
   , damageUpgradeLevel :: Int
   , speedUpgradeLevel :: Int
   , attackEffectPos :: (Float, Float)
@@ -101,6 +101,7 @@ data ClientState = ClientState
   , isVictory :: Bool
   , noticeText :: String
   , returnView :: ViewState
+  , noticeReturnView :: ViewState
   , playerAnim :: AnimState
   , playerFacingRight :: Bool
   , enemyCorpses :: [EnemyData]
@@ -161,7 +162,7 @@ data ShopItemKind
   | SwiftBoots
   deriving (Eq, Show, Read, Enum, Bounded)
 
-data UpgradeKind = MaxHealthUpgrade | ArmorUpgrade | DamageUpgrade | MoveSpeedUpgrade
+data UpgradeKind = MaxHealthUpgrade | DamageUpgrade | MoveSpeedUpgrade
   deriving (Eq, Show, Read, Enum, Bounded)
 
 characterStats :: Character -> CharacterStats
@@ -238,6 +239,7 @@ initialClientState assets =
     , roomInputActive = False
     , isReady = False
     , isMultiplayer = False
+    , onlinePlayerId = Nothing
     , statusText = "Choose a mode to begin."
     , playerPos = initialPosition
     , enemies = []
@@ -261,7 +263,6 @@ initialClientState assets =
     , shopRefreshes = 0
     , upgradeRefreshes = 0
     , healthUpgradeLevel = 0
-    , armorUpgradeLevel = 0
     , damageUpgradeLevel = 0
     , speedUpgradeLevel = 0
     , attackEffectPos = (0, 0)
@@ -270,6 +271,7 @@ initialClientState assets =
     , isVictory = False
     , noticeText = ""
     , returnView = MainMenuView
+    , noticeReturnView = MainMenuView
     , playerAnim = startAnim Idle
     , playerFacingRight = True
     , enemyCorpses = []

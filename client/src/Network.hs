@@ -2,6 +2,7 @@
 module Network where
 
 import qualified Network.WebSockets as WS
+import qualified Wuss
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar
 import Control.Exception (SomeException, displayException, try)
@@ -24,7 +25,7 @@ connectToServer :: String -> Int -> String -> String
 connectToServer host port code name = do
   ready <- newEmptyMVar
   _ <- forkIO $ do
-    result <- try (WS.runClient host port "/" $ \conn -> do
+    result <- try (runWs host port "/" $ \conn -> do
       WS.sendTextData conn (encode (JoinRoom code name))
       raw <- WS.receiveData conn
       case decode raw :: Maybe ServerMsg of
@@ -82,3 +83,9 @@ putOrSwap :: MVar a -> a -> IO ()
 putOrSwap mvar val = do
   _ <- tryTakeMVar mvar
   putMVar mvar val
+
+-- Port 443 (Render) dùng wss:// (TLS); các port khác dùng ws:// thường (chạy local).
+runWs :: String -> Int -> String -> WS.ClientApp a -> IO a
+runWs host port path app
+  | port == 443 = Wuss.runSecureClient host (fromIntegral port) path app
+  | otherwise   = WS.runClient host port path app

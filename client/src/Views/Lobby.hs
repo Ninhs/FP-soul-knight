@@ -5,6 +5,7 @@ import Assets
 import Types
 import Components.UI
 import qualified Theme
+import qualified Types.GameState as GS
 
 drawLobby :: World -> Picture
 drawLobby w = Pictures
@@ -17,7 +18,9 @@ drawLobby w = Pictures
   , Translate 0 (-10) $ drawSlots w
   , Translate 0 (-175) $
       drawTextShadow 0.13 Theme.cAccentBlue Theme.cDarkBorder
-        "OFFLINE MOCK LOBBY - PLAYERS AND MATCHMAKING ARE SIMULATED"
+        (if onlinePlayerId w == Nothing
+          then "JOIN WITH A BLANK CODE TO CREATE A NEW ONLINE ROOM"
+          else "ONLINE ROOM - THE HOST PRESSES START RUN")
   , button w (-450, -270) "BACK" 200
   , button w (-150, -270) (if isReady w then "NOT READY" else "READY UP") 220
   , button w (150, -270) "START RUN" 220
@@ -34,7 +37,7 @@ drawRoomPanel w = Pictures
   , Translate 0 (-10) $
       drawSoul3DText 2.0 Theme.cTextGold Theme.cDarkBorder (roomCode w)
   , Translate 0 (-42) $
-      drawTextShadow 0.11 Theme.cAccentGreen Theme.cDarkBorder "HOST / LOCAL"
+      drawTextShadow 0.11 Theme.cAccentGreen Theme.cDarkBorder (if onlinePlayerId w == Nothing then "NOT CONNECTED" else "ONLINE ROOM")
   , Translate 0 (-72) $ drawSoulButton 170 32 "COPY CODE"
       (insideRect (mousePos w) (-405, 143) 170 32)
   ]
@@ -47,17 +50,37 @@ drawJoinPanel w = Pictures
       , Color Theme.cPanelBg $ rectangleSolid 314 52
       , Translate (-145) (-6) $
           drawTextShadow 0.14 Theme.cTextWhite Theme.cDarkBorder
-            (if null (roomInput w) then "ROOM CODE (OPTIONAL)" else roomInput w)
+            (if null (roomInput w) then "ROOM CODE (BLANK = CREATE)" else roomInput w)
       ]
   , Translate 145 0 $ drawSoulButton 130 58 "JOIN"
       (insideRect (mousePos w) (215, 215) 130 58)
   , Translate (-70) (-39) $
       drawTextShadow 0.10 Theme.cTextMuted Theme.cDarkBorder
-        "LOCAL MOCK - JOIN DOES NOT CONNECT"
+        "JOIN CONNECTS TO THE GAME SERVER"
   ]
 
 drawSlots :: World -> Picture
-drawSlots w = Pictures
+drawSlots w = case onlinePlayerId w of
+  Just me -> Pictures
+    [ onlineSlot me slot x
+    | (slot, x) <- zip [1 ..] [-390, -130, 130, 390]
+    ]
+  Nothing -> drawMockSlots w
+  where
+    profs = GS.profiles (sharedState w)
+    onlineSlot me slot x = case drop (slot - 1) profs of
+      ((pid, prof) : _) ->
+        drawPlayerSlot w x slot
+          (if pid == me then "YOU" else take 8 (GS.profileName prof))
+          (roleCharacter (GS.profileRole prof)) True False
+      [] -> drawPlayerSlot w x slot "OPEN SLOT" Swordsman False False
+
+roleCharacter :: GS.Role -> Character
+roleCharacter GS.Archer = Archer
+roleCharacter GS.Warrior = Swordsman
+
+drawMockSlots :: World -> Picture
+drawMockSlots w = Pictures
   [ drawPlayerSlot w (-390) 1 "YOU" (selectedChar w) True (isReady w)
   , drawPlayerSlot w (-130) 2 "ALLY 02" Archer True False
   , drawPlayerSlot w 130 3 "ALLY 03" Knight (isReady w) False

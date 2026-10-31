@@ -2,6 +2,7 @@ module ClientUI
   ( UiAction(..)
   , UiResult(..)
   , reduceUi
+  , startLocalRun
   , toEnemyData
   , worldScale
   , toWorldPosition
@@ -50,7 +51,7 @@ reduceEnter state = case appView state of
     | roomInputActive state ->
         Just (submitRoomCode (state { roomInputActive = False }))
     | otherwise -> Just (startLocalRun state)
-  ShopNoticeView -> Just state { appView = returnView state }
+  ShopNoticeView -> Just state { appView = noticeReturnView state }
   TutorialView -> Just state { appView = CharacterSelectView }
   VictoryView -> Just (startLocalRun state)
   DefeatView -> Just (startLocalRun state)
@@ -134,7 +135,7 @@ clickMainMenu position state
       Just state
         { appView = ShopNoticeView
         , noticeText = "Settings are not implemented yet."
-        , returnView = MainMenuView
+        , noticeReturnView = MainMenuView
         }
   | otherwise = Nothing
 
@@ -170,7 +171,7 @@ clickLobby :: (Float, Float) -> ClientState -> Maybe ClientState
 clickLobby position state
   | insideRect position (-405, 143) 170 32 =
       Just state { statusText = "Room-code copy is unavailable in this window." }
-  | insideRect position (-405, 215) 320 58 =
+  | insideRect position (0, 215) 320 58 =
       Just state { roomInputActive = True, statusText = "Enter letters, digits or -." }
   | insideRect position (215, 215) 130 58 =
       Just (submitRoomCode (state { roomInputActive = False }))
@@ -216,9 +217,9 @@ clickShop :: (Float, Float) -> ClientState -> Maybe ClientState
 clickShop position state
   | insideRect position (-230, -280) 200 48 =
       Just state { appView = returnView state }
-  | insideRect position (-70, 220) 190 44 =
+  | insideRect position (20, 240) 190 44 =
       Just state { shopEquipmentTab = False }
-  | insideRect position (150, 220) 190 44 =
+  | insideRect position (240, 240) 190 44 =
       Just state { shopEquipmentTab = True }
   | insideRect position (20, -280) 240 48 && gems state >= 5 =
       Just state { gems = gems state - 5, shopRefreshes = shopRefreshes state + 1 }
@@ -256,14 +257,14 @@ clickChestReward position state
         state
           { appView = returnView state
           , goldCoins = goldCoins state + 120
-          , playerArmor = min (playerMaxArmor state) (playerArmor state + 10)
+
           }
   | otherwise = Nothing
 
 clickNotice :: (Float, Float) -> ClientState -> Maybe ClientState
 clickNotice position state
   | insideRect position (0, -70) 180 48 =
-      Just state { appView = returnView state }
+      Just state { appView = noticeReturnView state }
   | otherwise = Nothing
 
 clickConfirmation :: (Float, Float) -> ClientState -> Maybe ClientState
@@ -286,15 +287,12 @@ selectCharacter :: Character -> ClientState -> ClientState
 selectCharacter character state =
   let stats = characterStats character
       newMaxHealth = characterMaxHp stats + fromIntegral (healthUpgradeLevel state * 20)
-      newMaxArmor = characterDefense stats + fromIntegral (armorUpgradeLevel state * 10)
   in state
     { selectedChar = character
     , playerMaxHealth = newMaxHealth
     , playerHealth = min (playerHealth state) newMaxHealth
     , playerDamage = characterDamage stats + fromIntegral (damageUpgradeLevel state * 5)
     , playerMoveSpeed = characterMoveSpeed stats + fromIntegral (speedUpgradeLevel state * 10)
-    , playerArmor = min (playerArmor state) newMaxArmor
-    , playerMaxArmor = newMaxArmor
     }
 
 startLocalRun :: ClientState -> ClientState
@@ -375,7 +373,7 @@ startLocalRun state =
     , currentRoom = Just Map.StartRoom
     , bossDefeated = False
     , playerHealth = fromIntegral maxHealth
-    , playerArmor = playerMaxArmor state
+
     , enemies = map toEnemyData monsters
     , enemyCorpses = []
     , playerAnim = startAnim Idle
@@ -437,7 +435,7 @@ purchaseItem item state
 showNotice :: String -> ViewState -> ClientState -> ClientState
 showNotice message previous state = state
   { appView = ShopNoticeView
-  , returnView = previous
+  , noticeReturnView = previous
   , noticeText = message
   }
 
@@ -459,7 +457,6 @@ purchaseUpgrade upgrade state
   where
     level = case upgrade of
       MaxHealthUpgrade -> healthUpgradeLevel state
-      ArmorUpgrade -> armorUpgradeLevel state
       DamageUpgrade -> damageUpgradeLevel state
       MoveSpeedUpgrade -> speedUpgradeLevel state
     price = Upgrade.upgradePrice level
@@ -481,12 +478,6 @@ applyUpgrade upgrade newGold state = case upgrade of
               (GS.players updatedMap)
           }
       }
-  ArmorUpgrade -> state
-    { goldCoins = newGold
-    , armorUpgradeLevel = armorUpgradeLevel state + 1
-    , playerMaxArmor = playerMaxArmor state + 10
-    , playerArmor = playerArmor state + 10
-    }
   DamageUpgrade -> state
     { goldCoins = newGold
     , damageUpgradeLevel = damageUpgradeLevel state + 1
@@ -505,7 +496,7 @@ useInventoryItem slot state = case drop slot consumables of
   _ -> state
   where
     consumables =
-      [ SmallHealthPotion, LightArmor, LargeHealthPotion, HeavyArmor ]
+      [ SmallHealthPotion, LargeHealthPotion ]
 
 inventoryCount :: ShopItemKind -> [(ShopItemKind, Int)] -> Int
 inventoryCount item inventory =
@@ -513,17 +504,14 @@ inventoryCount item inventory =
 
 consumeItem :: ShopItemKind -> ClientState -> ClientState
 consumeItem item state =
-  let (hpGain, armorGain) = case item of
-        SmallHealthPotion -> (25, 0)
-        LargeHealthPotion -> (60, 0)
-        LightArmor -> (0, 20)
-        HeavyArmor -> (0, 50)
-        _ -> (0, 0)
+  let hpGain = case item of
+        SmallHealthPotion -> 25
+        LargeHealthPotion -> 60
+        _ -> 0
       remaining = removeOne item (shopInventory state)
       newHealth = min (playerMaxHealth state) (playerHealth state + hpGain)
   in (setPlayerHealth newHealth state)
     { playerHealth = newHealth
-    , playerArmor = min (playerMaxArmor state) (playerArmor state + armorGain)
     , shopInventory = remaining
     }
 

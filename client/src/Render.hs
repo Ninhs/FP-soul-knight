@@ -28,7 +28,7 @@ renderClient state = case appView state of
   CharacterSelectView -> drawCharSelect state
   MapSelectView -> drawMapSelect state
   TutorialView -> drawTutorialGuide state
-  InGameView -> drawGameHUD (combatWorld state)
+  InGameView -> Pictures [drawGameHUD (combatWorld state), drawAllies state]
   ShopView -> drawShop state
   UpgradeView -> drawUpgrade state
   PausedView -> Pictures
@@ -129,3 +129,22 @@ renderPortal p =
 renderResult :: Result -> Picture
 renderResult Victory = Scale 0.4 0.4 $ Color green $ Text "CHIEN THANG"
 renderResult Defeat  = Scale 0.4 0.4 $ Color red   $ Text "THUA CUOC"
+
+-- Vẽ đồng đội khi chơi online (người chơi của mình đã do drawGameHUD vẽ).
+-- Toạ độ trừ đi vị trí mình để khớp camera của drawGameHUD.
+drawAllies :: ClientState -> Picture
+drawAllies state = case onlinePlayerId state of
+  Nothing -> Blank
+  Just me ->
+    let (px, py) = playerPosition state
+    in Pictures
+         [ Translate (x - px) (y - py) $ Pictures
+             [ Color (makeColor 0.3 0.7 1.0 1.0) (circleSolid 14)
+             , Translate (-24) 22 $ Scale 0.1 0.1 $ Color white $
+                 Text ("P" ++ show (GS.playerId p))
+             ]
+         | p <- GS.players (localMapState state)
+         , GS.playerId p /= me
+         , GS.status p == GS.Alive
+         , let (x, y) = toScreenPosition (GS.position p)
+         ]
