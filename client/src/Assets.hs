@@ -77,6 +77,8 @@ data GameAssets = GameAssets
   , blueShieldImage :: Picture
   , manaBarImage :: Picture
   , hotbarSlotImage :: Picture
+  , stageRooms :: [Picture]   -- 3 phòng: đầu / quái nhỏ / boss (assets/stage/room_N.bmp)
+  , doorFrames :: [Picture]   -- cửa sắt: khung 0 = đóng ... cuối = mở (assets/stage/door_N.bmp)
   } deriving (Show)
 
 emptyGameAssets :: GameAssets
@@ -89,6 +91,7 @@ emptyGameAssets = GameAssets
   , soldierIdle = [], soldierWalk = [], soldierAttack = [], soldierDie = []
   , coinBagImage = Blank, goldChestImage = Blank, blueShieldImage = Blank
   , manaBarImage = Blank, hotbarSlotImage = Blank
+  , stageRooms = [], doorFrames = []
   }
 
 -- Hàm quét thư mục an toàn
@@ -145,6 +148,9 @@ loadAssets = do
   manaBar <- loadOptionalBMP (assetRoot </> "ui" </> "bar_fill_mana.bmp")
   hotbarSlot <- loadOptionalBMP (assetRoot </> "ui" </> "hotbar_slot.bmp")
 
+  rooms <- mapM (\n -> loadOptionalBMP (assetRoot </> "stage" </> ("room_" ++ show n ++ ".bmp"))) [0 .. 2 :: Int]
+  doors <- mapM (\n -> loadOptionalBMP (assetRoot </> "stage" </> ("door_" ++ show n ++ ".bmp"))) [0 .. 5 :: Int]
+
   return GameAssets
     { backgroundImage = background, dungeonMapImage = dungeonMap
     , archerIdle    = aIdle,   archerWalk    = aWalk,   archerAttack    = aAttack,   archerDie    = aDie
@@ -154,4 +160,5 @@ loadAssets = do
     , soldierIdle   = sIdle,   soldierWalk   = sWalk,   soldierAttack   = sAttack,   soldierDie   = sDie
     , coinBagImage = coinBag, goldChestImage = goldChest, blueShieldImage = blueShield
     , manaBarImage = manaBar, hotbarSlotImage = hotbarSlot
+    , stageRooms = rooms, doorFrames = doors
     }

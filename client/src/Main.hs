@@ -19,7 +19,8 @@ import Graphics.Gloss.Interface.IO.Game
   , SpecialKey(..)
   , playIO
   )
-import Animation (AnimKind(..), SpriteSet(..), setAnimKind, startAnim, stepAnim)
+import Animation (AnimKind(..), AnimState(..), SpriteSet(..), animFinished, setAnimKind, startAnim, stepAnim)
+import Sprites (framesOf, playerSet)
 import Assets (loadAssets)
 import ClientUI (UiAction(..), UiResult(..), reduceUi, startLocalRun, toEnemyData)
 import Components.UI (insideRect)
@@ -28,7 +29,7 @@ import Network
   ( NetworkConnection(..)
   , connectToServer
   )
-import Protocol (ClientMsg(StartGame, InputMsg, LeaveRoom))
+import Protocol (ClientMsg(StartGame, InputMsg, LeaveRoom, AdjustGold, HealSelf))
 import qualified Types.GameState as GS
 import ClientGameplay (stepLocalGameplay)
 import Input
@@ -85,6 +86,41 @@ runClient = do
 
 handleInput :: Net -> InputRefs -> Event -> ClientState -> IO ClientState
 handleInput net inputRefs event state = do
+  next <- handleInputRaw net inputRefs event state
+  syncEconomy net state next
+
+-- Chơi online: vàng và máu do server giữ. Rương / shop / bình thuốc đổi vàng, máu
+-- ở máy mình thì phải báo lên server, nếu không số liệu server sẽ ghi đè ngay.
+syncEconomy :: Net -> ClientState -> ClientState -> IO ClientState
+syncEconomy net before after = do
+  current <- readIORef (netConn net)
+  case current of
+    Just conn
+      | onlinePlayerId after /= Nothing ->
+          if unsupported
+            then pure before
+              { appView = ShopNoticeView
+              , noticeReturnView = appView before
+              , noticeText = "Not available in online mode yet."
+              }
+            else do
+              let dGold = goldCoins after - goldCoins before
+                  dHp = round (playerHealth after - playerHealth before) :: Int
+              when (dGold /= 0) $ sendClientMessage conn (AdjustGold dGold)
+              when (dHp > 0) $ sendClientMessage conn (HealSelf dHp)
+              pure after
+    _ -> pure after
+  where
+    -- nâng cấp chỉ số / bùa sát thương / giày chỉ có tác dụng ở chế độ offline
+    unsupported =
+      healthUpgradeLevel after /= healthUpgradeLevel before
+        || damageUpgradeLevel after /= damageUpgradeLevel before
+        || speedUpgradeLevel after /= speedUpgradeLevel before
+        || playerDamage after /= playerDamage before
+        || playerMoveSpeed after /= playerMoveSpeed before
+
+handleInputRaw :: Net -> InputRefs -> Event -> ClientState -> IO ClientState
+handleInputRaw net inputRefs event state = do
   handleEvent (const (pure ())) inputRefs event
   let positionedState = case event of
         EventMotion position -> state { mousePos = position }
@@ -231,6 +267,12 @@ updateOnline net conn inputRefs dt state = do
                 else appView state
             }
 
+-- Đưa giá trị `cur` tiến dần tới `target`, mỗi lần tối đa `amount` (dùng cho hoạt ảnh cửa).
+stepToward :: Float -> Float -> Float -> Float
+stepToward target amount cur
+  | cur < target = min target (cur + amount)
+  | otherwise = max target (cur - amount)
+
 -- Cùng công thức với server (cấp n cần n*100 EXP).
 levelFor :: Int -> Int -> (Int, Int)
 levelFor lv xp
@@ -263,16 +305,24 @@ applyServerMap dt (dx, _) gs ms st = st
   , playerPos = shown
   , enemies = newEnemies
   , allies = newAllies
-  , enemyCorpses = map (\e -> e { enemyAnim = stepAnim dt (enemyAnim e) }) (enemyCorpses st ++ newCorpses)
+  , enemyCorpses = if sameStage
+      then map (\e -> e { enemyAnim = stepAnim dt (enemyAnim e) }) (enemyCorpses st ++ newCorpses)
+      else []   -- sang phòng mới: bỏ xác quái phòng cũ
   , clearedRooms = cleared
   , currentRoom = Map.roomAt (selectedMapSize st) shown
   , bossDefeated = not (any ((== 900) . GS.monsterId) (GS.monsters ms))
+  , doorOpen = stepToward (if null (GS.monsters ms) then 1 else 0) (dt * 2.5) (doorOpen st)
+  , stageClock = stageClock st + dt
   , playerLevel = shownLevel
   , playerExperience = shownExp
   , goldCoins = shownGold
   , playerHealth = maybe (playerHealth st) (fromIntegral . GS.hp . GS.stats) me
   , playerMaxHealth = maybe (playerMaxHealth st) (fromIntegral . max 1 . GS.maxHp . GS.stats) me
-  , playerAnim = stepAnim dt (setAnimKind (if moved then Walk else Idle) (playerAnim st))
+  , playerAnim = stepAnim dt (pickAnim (playerSet (selectedChar st)) (any nearestIsMe hitMonsters) moved (playerAnim st))
+  , attackEffectTimer = if null hitMonsters then max 0 (attackEffectTimer st - dt) else 0.18
+  , attackEffectPos = case hitMonsters of
+      (m : _) -> Map.toScreenPosition (GS.mPosition m)
+      [] -> attackEffectPos st
   , playerFacingRight = if dx > 0 then True else if dx < 0 then False else playerFacingRight st
   }
   where
@@ -298,6 +348,38 @@ applyServerMap dt (dx, _) gs ms st = st
       ]
     oldById = [(enemyId e, e) | e <- enemies st]
     newIds = map GS.monsterId (GS.monsters ms)
+    -- Nhận ra đòn đánh từ dữ liệu server (client online không tự mô phỏng trận đánh):
+    --  * quái mất máu hoặc biến mất  = vừa bị đánh trúng -> hiệu ứng trúng đòn
+    --  * hồi chiêu của quái tăng lên = quái vừa ra đòn   -> hoạt ảnh Attack
+    prevMonsters = GS.monsters (localMapState st)
+    prevHp = [(GS.monsterId m, GS.hp (GS.mStats m)) | m <- prevMonsters]
+    prevCooldown = [(GS.monsterId m, GS.mCooldown m) | m <- prevMonsters]
+    nowIds = map GS.monsterId (GS.monsters ms)
+    sameStage = GS.mapIndex (localMapState st) == GS.mapIndex ms
+    hitMonsters = if not sameStage then [] else
+      [ m | m <- GS.monsters ms
+          , Just h0 <- [lookup (GS.monsterId m) prevHp]
+          , GS.hp (GS.mStats m) < h0 ]
+      ++ [ m | m <- prevMonsters, GS.monsterId m `notElem` nowIds ]
+    attackedIds =
+      [ GS.monsterId m
+      | m <- GS.monsters ms
+      , Just c0 <- [lookup (GS.monsterId m) prevCooldown]
+      , GS.mCooldown m > c0 + 0.001 ]
+    -- đòn đánh trúng quái này là của mình nếu mình là người chơi sống gần quái nhất
+    nearestIsMe m =
+      case [p | p <- GS.players ms, GS.status p == GS.Alive] of
+        [] -> False
+        ps -> let best = foldr1 (\a b -> if distance2 (GS.mPosition m) (GS.position a)
+                                             <= distance2 (GS.mPosition m) (GS.position b)
+                                          then a else b) ps
+              in Just (GS.playerId best) == onlinePlayerId st
+    -- Đòn đang chạy dở thì giữ nguyên tới khi hết, sau đó đi / đứng yên.
+    pickAnim set attacked isMoving old
+      | attacked = startAnim Attack
+      | animKind old == Attack && not (animFinished (framesOf (appAssets st) set Attack) old) = old
+      | isMoving = setAnimKind Walk old
+      | otherwise = setAnimKind Idle old
     newEnemies = map carry (map toEnemyData (GS.monsters ms))
     carry e = case lookup (enemyId e) oldById of
       Nothing -> e
@@ -307,7 +389,7 @@ applyServerMap dt (dx, _) gs ms st = st
             (nx, _) = shownE
             movedE = distance2 (enemyPos old) shownE > 0.04
         in e { enemyPos = shownE
-             , enemyAnim = stepAnim dt (setAnimKind (if movedE then Walk else Idle) (enemyAnim old))
+             , enemyAnim = stepAnim dt (pickAnim (enemySprite old) (enemyId e `elem` attackedIds) movedE (enemyAnim old))
              , enemyFacingRight = if nx > ox then True else if nx < ox then False else enemyFacingRight old }
     -- đồng đội: mọi người chơi còn sống trừ mình, có sprite và vị trí làm mượt
     oldAllies = [(allyId x, x) | x <- allies st]

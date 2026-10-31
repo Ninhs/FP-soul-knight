@@ -401,6 +401,8 @@ startLocalRun state =
     , attackEffectTimer = 0
     , tutorialVisible = False
     , statusText = "Diệt hết quái ở phòng trước để mở cửa"
+    , onlinePlayerId = Nothing   -- chơi solo: không dùng bản đồ online (Main.freshOnlineRun gán lại khi online)
+    , allies = []
     , isVictory = False
     }
 

@@ -135,7 +135,7 @@ renderResult Defeat  = Scale 0.4 0.4 $ Color red   $ Text "THUA CUOC"
 -- Vẽ đồng đội khi chơi online bằng sprite (người chơi của mình do drawGameHUD vẽ).
 -- Toạ độ trừ đi vị trí mình để khớp camera của drawGameHUD.
 drawAllies :: ClientState -> Picture
-drawAllies state = Translate (negate px) (negate py) $ Pictures (map drawAlly (allies state))
+drawAllies state = Pictures (map drawAlly (allies state))   -- camera đứng yên theo phòng
   where
     (px, py) = playerPosition state
     drawAlly a =

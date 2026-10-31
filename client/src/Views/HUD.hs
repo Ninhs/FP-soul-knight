@@ -9,6 +9,7 @@ import Animation (AnimState, currentFrame, animKind, AnimKind(..), SpriteSet(..)
 import Assets
 import qualified MapLayout as Map
 import qualified Types.GameState as GS
+import qualified StageLayout as Stage
 import Sprites (framesOf, playerSet)
 import Types
 import Components.UI
@@ -34,7 +35,7 @@ import qualified Theme
 
 drawGameHUD :: World -> Picture
 drawGameHUD w = Pictures
-  [ Translate (-px) (-py) $ Pictures
+  [ if onlinePlayerId w /= Nothing then drawStageWorld w else Translate (-px) (-py) $ Pictures
       [ drawAssetAt w (mapAsset (selectedMapSize w)) (0, 0)
           (fromIntegral mapColumns * Theme.dungeonTileSize,
            fromIntegral mapRows * Theme.dungeonTileSize) Stretch
@@ -391,3 +392,42 @@ drawDrops w = Pictures
     dropColor (GS.GoldDrop _) = yellow
     dropColor (GS.ExpDrop _)  = green
     dropColor (GS.HealDrop _) = rose
+
+-- Chơi online: mỗi màn là một phòng cố định (camera đứng yên, gốc toạ độ ở tâm phòng).
+-- Cửa sắt chạy hoạt ảnh đóng/mở; khi mở thì hiện ô vàng (1 ô dài x 3 ô rộng) trước cửa.
+drawStageWorld :: World -> Picture
+drawStageWorld w = Pictures
+  [ roomPicture
+  , zoneHighlight
+  , doorPicture
+  , drawDrops w
+  , Pictures (map (drawEnemy w) (enemyCorpses w ++ enemies w))
+  , Pictures (map (drawProjectile w) (projectiles w))
+  , drawPlayer w
+  , drawAttackEffect w (attackEffectTimer w) (attackEffectPos w)
+  ]
+  where
+    assets = appAssets w
+    stage = GS.mapIndex (localMapState w)
+    rooms = stageRooms assets
+    roomPicture
+      | stage >= 0 && stage < length rooms = rooms !! stage
+      | otherwise = Color (makeColor 0.16 0.2 0.19 1) $
+          rectangleSolid Stage.roomWidth Stage.roomHeight   -- chưa có ảnh: nền phẳng
+    frames = doorFrames assets
+    frameIndex = max 0 (min (length frames - 1)
+      (round (doorOpen w * fromIntegral (length frames - 1))))
+    (doorX, doorY) = Stage.doorCenter
+    doorPicture
+      | null frames = Blank
+      | otherwise = Translate doorX doorY (frames !! frameIndex)
+    (zoneX, zoneY) = Stage.exitZoneCenter
+    zoneW = Map.rectWidth Stage.exitZoneRect
+    zoneH = Map.rectHeight Stage.exitZoneRect
+    pulse = 0.38 + 0.2 * sin (stageClock w * 4)
+    zoneHighlight
+      | doorOpen w < 0.999 = Blank      -- cửa chưa mở thì không có ô vàng
+      | otherwise = Translate zoneX zoneY $ Pictures
+          [ Color (makeColor 1.0 0.84 0.2 pulse) $ rectangleSolid zoneW zoneH
+          , Color (makeColor 1.0 0.93 0.45 0.95) $ rectangleWire zoneW zoneH
+          ]

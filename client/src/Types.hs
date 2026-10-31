@@ -68,6 +68,8 @@ data ClientState = ClientState
   , roomCode :: String
   , roomInput :: String
   , roomInputActive :: Bool
+  , doorOpen :: Float             -- 0 = cửa sắt đóng, 1 = mở hẳn (chạy hoạt ảnh)
+  , stageClock :: Float           -- đồng hồ để ô vàng nhấp nháy
   , playerName :: String          -- tên nhập ở lobby (khoá tài khoản trong DB)
   , nameInputActive :: Bool
   , isReady :: Bool
@@ -251,6 +253,8 @@ initialClientState assets =
     , roomCode = "LOCAL-01"
     , roomInput = ""
     , roomInputActive = False
+    , doorOpen = 1
+    , stageClock = 0
     , playerName = ""
     , nameInputActive = False
     , isReady = False
