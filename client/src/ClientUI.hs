@@ -48,7 +48,7 @@ reduceClick position state
 reduceEnter :: ClientState -> Maybe ClientState
 reduceEnter state = case appView state of
   MainMenuView -> Just state { appView = CharacterSelectView }
-  CharacterSelectView -> Just state { appView = MapSelectView }
+  CharacterSelectView -> Just (leaveCharSelect MapSelectView state)
   MapSelectView -> Just (startLocalRun state)
   LobbyView
     | nameInputActive state ->
@@ -155,6 +155,12 @@ clickMainMenu position state
         }
   | otherwise = Nothing
 
+-- Từ lobby bấm CHOOSE HERO thì xong phải quay lại đúng lobby (giữ nguyên phòng).
+leaveCharSelect :: ViewState -> ClientState -> ClientState
+leaveCharSelect defaultView state
+  | charReturnView state == LobbyView = state { appView = LobbyView, charReturnView = MainMenuView }
+  | otherwise = state { appView = defaultView }
+
 clickCharacterSelect :: (Float, Float) -> ClientState -> Maybe ClientState
 clickCharacterSelect position state
   | insideRect position (-375, -75) 104 104
@@ -164,9 +170,9 @@ clickCharacterSelect position state
       || insideRect position (-95, -190) 160 48 =
       Just (selectCharacter Archer state)
   | insideRect position (-220, -280) 190 52 =
-      Just state { appView = MainMenuView }
+      Just (leaveCharSelect MainMenuView state)
   | insideRect position (220, -280) 220 52 =
-      Just state { appView = MapSelectView }
+      Just (leaveCharSelect MapSelectView state)
   | otherwise = Nothing
 
 clickMapSelect :: (Float, Float) -> ClientState -> Maybe ClientState
@@ -199,7 +205,7 @@ clickLobby position state
   | insideRect position (-450, -270) 200 52 =
       Just state { appView = MapSelectView, isMultiplayer = False, onlinePlayerId = Nothing, roomCode = "LOCAL-01" }
   | insideRect position (450, -270) 220 52 =
-      Just state { appView = CharacterSelectView }
+      Just state { appView = CharacterSelectView, charReturnView = LobbyView }
   | otherwise = Nothing
 
 submitRoomCode :: ClientState -> ClientState

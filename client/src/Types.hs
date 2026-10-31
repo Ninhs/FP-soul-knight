@@ -111,6 +111,7 @@ data ClientState = ClientState
   , noticeText :: String
   , returnView :: ViewState
   , noticeReturnView :: ViewState
+  , charReturnView :: ViewState   -- màn quay lại sau khi chọn hero (lobby hoặc menu)
   , playerAnim :: AnimState
   , playerFacingRight :: Bool
   , enemyCorpses :: [EnemyData]
@@ -252,8 +253,8 @@ initialClientState assets =
     , bossDefeated = False
     , selectedChar = Swordsman
     , selectedMapSize = SmallMap
-    , goldCoins = 500
-    , gems = 10
+    , goldCoins = 0
+    , gems = 0
     , roomCode = "LOCAL-01"
     , roomInput = ""
     , roomInputActive = False
@@ -297,6 +298,7 @@ initialClientState assets =
     , noticeText = ""
     , returnView = MainMenuView
     , noticeReturnView = MainMenuView
+    , charReturnView = MainMenuView
     , playerAnim = startAnim Idle
     , playerFacingRight = True
     , enemyCorpses = []
