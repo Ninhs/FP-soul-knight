@@ -366,16 +366,14 @@ drawTutorialPanel w = Pictures
   , Translate 0 200 $
       drawSoul3DText 2.2 Theme.cTextGold Theme.cDarkBorder "FIELD GUIDE"
   , guideRow 115 "WASD" "Move in four directions or diagonally"
-  , guideRow 65 "LEFT CLICK" "Aim with the pointer and attack"
-  , guideRow 15 "SKILLS" "Not available in the local preview"
-  , guideRow (-35) "E" "Interact with nearby objects"
-  , guideRow (-85) "I / 1-4" "Show inventory / use an item"
+  , guideRow 65 "HOLD LEFT CLICK" "Attack the nearest enemy in range"
+  , guideRow 15 "E" "Open chests / interact with nearby objects"
+  , Translate (-285) (-110) $
+      drawTextShadow 0.11 Theme.cTextMuted Theme.cDarkBorder
+        "Clear every enemy, open the chest, then step into the golden zone."
   , Translate (-285) (-150) $
       drawTextShadow 0.11 Theme.cTextMuted Theme.cDarkBorder
-        "Local preview data is temporary and is not saved."
-  , Translate 0 (-190) $
-      drawTextShadow 0.11 Theme.cAccentBlue Theme.cDarkBorder
-        "MOCK ENEMY AND REWARD STATE IS LOCAL ONLY"
+        "Gold, EXP, gems and upgrades are saved when you play online."
   ]
   where
     guideRow y key description = Translate 0 y $ Pictures

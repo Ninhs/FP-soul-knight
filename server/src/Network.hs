@@ -97,6 +97,8 @@ clientLoop conn room pid = loop
           loop
         Just (AdjustGold d) -> adjustGold room pid d >> loop
         Just (HealSelf n) -> healPlayer room pid n >> loop
+        Just (SaveMeta m) -> updateMeta room pid m >> loop
+        Just (ChooseRole r) -> setRole room pid r >> loop
         Just (SetReady b) -> setReady room pid b >> loop
         Just (BoostStats d sp h) -> boostPlayer room pid d sp h >> loop
         Just LeaveRoom -> pure ()

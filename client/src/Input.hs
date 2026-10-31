@@ -5,6 +5,7 @@ module Input
   , movementDirection
   , aimPosition
   , takeAttackRequest
+  , isAttackHeld
   ) where
 
 import Data.IORef
@@ -40,6 +41,10 @@ movementDirection refs = do
 
 aimPosition :: InputRefs -> IO (Float, Float)
 aimPosition = readIORef . mousePos
+
+-- Nút chuột trái đang được giữ (giữ chuột = tự đánh quái gần nhất trong tầm).
+isAttackHeld :: InputRefs -> IO Bool
+isAttackHeld = readIORef . mouseLeft
 
 takeAttackRequest :: InputRefs -> IO Bool
 takeAttackRequest refs = do

@@ -80,7 +80,7 @@ roomLoop rooms code room = getMonotonicTime >>= go (0 :: Int) M.empty
           _          -> g
       -- Ván vừa kết thúc (chỉ xảy ra đúng 1 lần): lưu kết quả vào DB ở thread riêng
       case finished of
-        Just (r, ms) -> void (forkIO (persistRun code room r ms))
+        Just (r, ms) -> void (forkIO (persistRun code room r ms >> threadDelay 3000000 >> resetToLobby room ms))
         Nothing      -> pure ()
       pure cds'
 

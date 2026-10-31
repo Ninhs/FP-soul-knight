@@ -1,6 +1,7 @@
 module Room where
 
 import Control.Concurrent.STM
+import qualified Control.Concurrent
 import Control.Exception (SomeException, try)
 import Control.Monad (replicateM, void, when)
 import Data.Time (UTCTime, getCurrentTime)
@@ -10,7 +11,7 @@ import Data.Map (Map)
 import qualified Network.WebSockets as WS
 import System.Random (randomRIO)
 
-import DB (SavedPlayer(..), addExp)
+import DB (SavedPlayer(..), addExp, saveMeta)
 import Logic.Control (PlayerInput)
 import Logic.MapGen (newMapState)
 import Protocol
@@ -69,8 +70,8 @@ joinRoom room name saved = atomically $ do
           pid <- readTVar (roomNextId room)
           writeTVar (roomNextId room) (pid + 1)
           let profile = case saved of
-                Just sp -> PlayerProfile name (spRole sp) (spLevel sp) (spExp sp) (spGold sp) False
-                Nothing -> PlayerProfile name Warrior 1 0 500 False
+                Just sp -> PlayerProfile name (spRole sp) (spLevel sp) (spExp sp) (spGold sp) False (spMeta sp)
+                Nothing -> PlayerProfile name Warrior 1 0 500 False defaultMeta
           case saved of
             Just sp -> modifyTVar' (roomDbIds room) (Map.insert pid (spId sp))
             Nothing -> pure ()
@@ -204,3 +205,47 @@ boostPlayer room pid dDmg0 dSpd0 dHp0 = atomically $ modifyTVar' (roomState room
                    , hp = min newMax (hp st + (newMax - maxHp st))
                    } }
       | otherwise = p
+
+-- Ván kết thúc xong (đã lưu DB) thì đưa phòng về Lobby để chơi tiếp / người mới vào được.
+-- Vàng, EXP vừa kiếm được cộng vào hồ sơ trong phòng; người đã rời thì bỏ khỏi danh sách.
+resetToLobby :: Room -> MapState -> IO ()
+resetToLobby room ms = atomically $ do
+  gs <- readTVar (roomState room)
+  clients <- readTVar (roomClients room)
+  ids <- readTVar (roomDbIds room)
+  case phase gs of
+    RoomResult _ -> do
+      let earned pid =
+            [ p | p <- players ms, playerId p == pid, status p /= Disconnected, Map.member pid ids ]
+          bump (i, pr) = case earned i of
+            (p : _) ->
+              let (lv, ex) = addExp (profileLv pr) (profileExp pr) (pendingExp p)
+              in (i, pr { profileLv = lv, profileExp = ex
+                        , profileGold = max 0 (profileGold pr + pendingGold p), profileReady = False })
+            [] -> (i, pr { profileReady = False })
+      writeTVar (roomState room) gs
+        { phase = Lobby
+        , profiles = map bump (filter ((`Map.member` clients) . fst) (profiles gs)) }
+      writeTVar (roomStarted room) Nothing
+    _ -> pure ()
+
+-- Chọn nghề ở lobby (quyết định chỉ số, tầm đánh và hình hiện trong phòng chờ).
+setRole :: Room -> Int -> Role -> IO ()
+setRole room pid role = atomically $ modifyTVar' (roomState room) $ \gs -> case phase gs of
+  Lobby -> gs { profiles = [ (i, if i == pid then p { profileRole = role } else p) | (i, p) <- profiles gs ] }
+  _ -> gs
+
+-- Lưu gem / cấp nâng cấp: cập nhật hồ sơ trong phòng (để ván sau áp dụng) và ghi database.
+-- Giá trị bị chặn trong khoảng hợp lý.
+updateMeta :: Room -> Int -> Meta -> IO ()
+updateMeta room pid m0 = do
+  let clampTo hi v = max 0 (min hi v)
+      m = Meta (clampTo 99999 (metaGems m0)) (clampTo 50 (metaHpLv m0))
+               (clampTo 50 (metaDmgLv m0)) (clampTo 50 (metaSpeedLv m0))
+  atomically $ modifyTVar' (roomState room) $ \gs ->
+    gs { profiles = [ (i, if i == pid then p { profileMeta = m } else p) | (i, p) <- profiles gs ] }
+  ids <- readTVarIO (roomDbIds room)
+  case Map.lookup pid ids of
+    Just dbId -> void (forkIO' (saveMeta dbId m))
+    Nothing -> pure ()
+  where forkIO' = Control.Concurrent.forkIO
