@@ -27,7 +27,7 @@ Dự án gồm ba package cabal trong cùng một workspace (`cabal.project`):
 - `shared/`: kiểu dữ liệu và giao thức dùng chung cho client và server. Mã nguồn trong `shared/src` gồm `Types/` (Player, Monster, Item, GameState), `Protocol`, `MapLayout`, `StageLayout`.
 - `server/`: server game (WebSocket và PostgreSQL). Mã nguồn trong `server/src` gồm `Main`, `Network`, `Room`, `RoomLoop`, `DB`, `Config` và thư mục `Logic/` (AI, Combat, Control, GameLoop, MapGen, Movement, Portal).
 - `client/`: client đồ họa dùng gloss. Mã nguồn trong `client/src` gồm `Main`, `Network`, `Render`, `Input`, `Assets`, `Sprites`, thư mục `Views/` và `Components/`.
-- `experiments/`: thí nghiệm kèm báo cáo, ví dụ đo rò rỉ bộ nhớ do lazy evaluation.
+- `experiments/`: kiểm thử kèm báo cáo, gồm đo rò rỉ bộ nhớ do lazy evaluation (`leak_check`) và kiểm thử tải bằng bot (`load_test`).
 - `Dockerfile`: đóng gói server để triển khai.
 - `cabal.project`: khai báo ba package `shared`, `server`, `client`.
 
@@ -93,9 +93,14 @@ Sau đó đặt `127.0.0.1:8080` vào `server.txt` rồi chạy client. Server c
 
 > Không đưa mật khẩu hoặc chuỗi kết nối thật vào repo. Triển khai thật nên đặt `DATABASE_URL` trong phần biến môi trường của nơi lưu trữ server của bạn (ví dụ Render).
 
-## Thí nghiệm kèm báo cáo
+## Kiểm thử
 
-Thư mục [`experiments/leak_check`](experiments/leak_check) chứa mô phỏng đo **rò rỉ bộ nhớ do lazy evaluation** với bảng thời gian hồi đòn của người chơi: so sánh `Data.Map` lười, `Data.Map.Strict` và `Data.Map.Strict` kèm `seq` sau 400.000 tick (khoảng 1,9 giờ chơi). Cách chạy nằm trong README của thư mục đó.
+Thư mục `experiments/` chứa hai phần kiểm thử đi kèm báo cáo, mỗi phần có README riêng:
+
+- [`experiments/leak_check`](experiments/leak_check): mô phỏng đo **rò rỉ bộ nhớ do lazy evaluation** với bảng thời gian hồi đòn của người chơi. So sánh `Data.Map` lười, `Data.Map.Strict` và `Data.Map.Strict` kèm `seq` sau 400.000 tick (khoảng 1,9 giờ chơi).
+- [`experiments/load_test`](experiments/load_test): script `bot_test.py` tạo nhiều bot giả làm người chơi (cứ 4 bot một phòng) để kiểm tra server chịu tải, ví dụ 100 bot cùng lúc. In ra số bot vào được phòng, thời gian vào phòng và số bản cập nhật mỗi bot nhận được mỗi giây.
+
+Ngoài ra, các chức năng online (tạo phòng, vào phòng, chọn hero, bắt đầu ván) được kiểm thử thủ công với vài client thật.
 
 ## Hạn chế hiện tại
 
@@ -103,7 +108,7 @@ Thư mục [`experiments/leak_check`](experiments/leak_check) chứa mô phỏng
 - Đồ mua trong Shop (bùa sát thương, giày) chỉ có tác dụng trong một ván, chưa lưu lâu dài.
 - Hero đang chọn chưa được lưu vào database.
 - Tiến trình chơi offline không được lưu.
-- Phần online mới được kiểm thử thủ công với vài client, chưa có bộ kiểm thử tự động.
+- Chưa có bộ kiểm thử đơn vị tự động. Phần online được kiểm thử thủ công và bằng bot tạo tải trong `experiments/load_test`.
 
 ## Nhóm thực hiện
 
